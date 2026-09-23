@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres_clinica:
+    image: postgres:15
+    container_name: clinica_db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: clinica_db
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:
