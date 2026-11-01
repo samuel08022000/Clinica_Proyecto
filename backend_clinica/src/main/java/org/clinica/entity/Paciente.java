@@ -1,30 +1,50 @@
 package org.clinica.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Column; // Importamos esta librería para las reglas
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import jakarta.persistence.*;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 
-@Entity 
-public class Paciente extends PanacheEntity {
-    
-    // Equivale a VARCHAR(50) y NOT NULL (no puede estar vacío)
-    @Column(length = 50, nullable = false)
-    public String nombre;
+@Entity
+@Table(name = "pacientes", schema = "public")
+public class Paciente extends PanacheEntityBase {
 
-    @Column(length = 50, nullable = false)
-    public String apellido;
+    @Id
+    @Generated(event = EventType.INSERT)
+    @Column(name = "cod_pac", insertable = false, updatable = false)
+    public String codPac;
 
-    // unique = true evita que dos pacientes tengan el mismo carnet
-    @Column(length = 15, unique = true, nullable = false)
-    public String ci; 
-    
-    // Un número entero normal
-    public int edad;
+    @Generated(event = EventType.INSERT)
+    @Column(name = "secuencial", insertable = false, updatable = false)
+    public Long secuencial;
 
-    // Para decimales (peso, altura, precios), usas double o float
-    public double peso; 
+    @Column(name = "cod_usu", nullable = false, unique = true)
+    public String codUsu;
 
-    // Para contraseñas, le damos 255 caracteres porque cuando la encriptes (ej. con Bcrypt) se hará muy larga
-    @Column(length = 255)
-    public String password;
+    @Column(name = "ci", nullable = false, length = 30)
+    public String ci;
+
+    @Column(name = "fecha_nacimiento", nullable = false)
+    public LocalDate fechaNacimiento;
+
+    @Column(name = "telefono", nullable = false, length = 25)
+    public String telefono;
+
+    @Column(name = "telefono_verificado", nullable = false)
+    public Boolean telefonoVerificado = false;
+
+    @Column(name = "ciudad_residencia", nullable = false, length = 100)
+    public String ciudadResidencia;
+
+    @Column(name = "estado_cuenta", nullable = false, length = 24)
+    public String estadoCuenta = "Activo";
+
+    @Column(name = "bloqueado_hasta")
+    public OffsetDateTime bloqueadoHasta;
+
+    @Generated(event = EventType.INSERT)
+    @Column(name = "creado_en", insertable = false, updatable = false)
+    public OffsetDateTime creadoEn;
 }

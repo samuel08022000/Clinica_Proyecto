@@ -1,0 +1,69 @@
+package org.clinica.config;
+
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.ExceptionMapper;
+import jakarta.ws.rs.ext.Provider;
+import org.jboss.logging.Logger;
+import org.postgresql.util.PSQLException;
+
+import java.sql.SQLException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Traduce los {@code RAISE EXCEPTION} de los triggers/funciones de PostgreSQL
+ * (reglas de negocio) a respuestas HTTP 400 con un JSON uniforme:
+ * <pre>{"ok": false, "error": "REGLA_NEGOCIO_BD", "mensaje": "..."}</pre>
+ */
+@Provider
+public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
+
+    private static final Logger LOG = Logger.getLogger(TriggerExceptionMapper.class);
+
+    @Override
+    public Response toResponse(Exception exception) {
+        // Respeta las respuestas JAX-RS explícitas (404, 401, 403, etc.).
+        if (exception instanceof WebApplicationException wae) {
+            return wae.getResponse();
+        }
+
+        PSQLException psql = buscarPSQLException(exception);
+        if (psql != null && psql.getServerErrorMessage() != null) {
+            String mensajePostgres = psql.getServerErrorMessage().getMessage();
+            LOG.debugf("Regla de negocio rechazada por PostgreSQL [%s]: %s", psql.getSQLState(), mensajePostgres);
+            return json(Response.Status.BAD_REQUEST, "REGLA_NEGOCIO_BD", mensajePostgres);
+        }
+
+        LOG.error("Error no controlado en la API", exception);
+        return json(Response.Status.INTERNAL_SERVER_ERROR, "ERROR_INTERNO", "Ocurrió un error interno inesperado.");
+    }
+
+    /** Recorre la cadena getCause() (y getNextException() de JDBC) buscando un PSQLException. */
+    private static PSQLException buscarPSQLException(Throwable t) {
+        Set<Throwable> visitados = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable actual = t;
+        while (actual != null && visitados.add(actual)) {
+            if (actual instanceof PSQLException psql) {
+                return psql;
+            }
+            if (actual instanceof SQLException sql && sql.getNextException() instanceof PSQLException next) {
+                return next;
+            }
+            actual = actual.getCause();
+        }
+        return null;
+    }
+
+    private static Response json(Response.Status status, String error, String mensaje) {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("ok", false);
+        cuerpo.put("error", error);
+        cuerpo.put("mensaje", mensaje);
+        return Response.status(status).type(MediaType.APPLICATION_JSON).entity(cuerpo).build();
+    }
+}

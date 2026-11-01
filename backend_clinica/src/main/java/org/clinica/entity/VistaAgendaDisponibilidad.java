@@ -1,11 +1,19 @@
 package org.clinica.entity;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import org.hibernate.annotations.Immutable;
+
 import java.time.LocalDate;
 import java.time.LocalTime;
 
+/**
+ * Vista {@code public.v_agenda_disponibilidad} (solo lectura). Ventana D..D+14.
+ * {@code estadoDisponibilidad}: Disponible, Ocupado, Bloqueado, No Disponible, Expirado.
+ */
 @Entity
 @Immutable
 @Table(name = "v_agenda_disponibilidad", schema = "public")
@@ -17,6 +25,9 @@ public class VistaAgendaDisponibilidad extends PanacheEntityBase {
 
     @Column(name = "cod_med")
     public String codMed;
+
+    @Column(name = "cod_usu_medico")
+    public String codUsuMedico;
 
     @Column(name = "nombre_medico")
     public String nombreMedico;
