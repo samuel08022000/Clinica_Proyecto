@@ -1,0 +1,6 @@
+# Herramientas locales de desarrollo
+.agents/
+.claude/
+.mcp.json
+boost.json
+.taste-skill/

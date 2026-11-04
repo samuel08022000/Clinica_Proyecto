@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'quarkus' => [
+        'base_url' => env('QUARKUS_API_URL', 'http://localhost:8080/api/v1'),
+        'timeout' => (int) env('QUARKUS_API_TIMEOUT', 8),
+        'connect_timeout' => (int) env('QUARKUS_API_CONNECT_TIMEOUT', 3),
+    ],
+
 ];

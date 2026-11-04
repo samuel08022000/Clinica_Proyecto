@@ -1,0 +1,137 @@
+@extends('layouts.app')
+
+@section('title', 'Iniciar sesión | '.config('clinic.identity.name'))
+@section('body_class', 'auth-page')
+
+@section('content')
+    <main id="contenido-principal" class="auth-shell">
+        <section class="auth-visual" aria-labelledby="auth-visual-title">
+            <a class="brand brand--light" href="{{ route('home') }}" aria-label="Volver al inicio">
+                <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v30M5 20h30" /><path d="M11 11h18v18H11z" /></svg>
+                <span>{{ config('clinic.identity.short_name') }}</span>
+            </a>
+            <img
+                src="{{ asset('images/clinic/appointment-calendar.png') }}"
+                alt="Profesional de salud revisa una agenda de citas"
+                width="1120"
+                height="1400"
+                fetchpriority="high"
+            >
+            <div class="auth-visual__scrim" aria-hidden="true"></div>
+            <div class="auth-visual__copy">
+                <h1 id="auth-visual-title">Tu portal de salud</h1>
+                <p>Consulta y organiza tus citas desde un acceso protegido por roles.</p>
+            </div>
+        </section>
+
+        <section class="auth-panel" aria-labelledby="login-title">
+            <div class="auth-panel__inner">
+                <div class="auth-mobile-brand">
+                    <a class="brand" href="{{ route('home') }}">
+                        <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v30M5 20h30" /><path d="M11 11h18v18H11z" /></svg>
+                        <span>{{ config('clinic.identity.short_name') }}</span>
+                    </a>
+                </div>
+
+                <header class="form-heading">
+                    <h2 id="login-title">Iniciar sesión</h2>
+                    <p>Usa el correo registrado en el sistema.</p>
+                </header>
+
+                @include('layouts.alerts')
+
+                @unless ($backendAvailable)
+                    <div class="service-notice" role="status">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 4h.01M4 4h16v16H4z" /></svg>
+                        <p><strong>Acceso aún no habilitado.</strong> Quarkus no expone un endpoint de autenticación. El formulario conserva su estructura, pero no iniciará una sesión falsa.</p>
+                    </div>
+                @endunless
+
+                <form class="auth-form" method="POST" action="{{ route('login.attempt') }}" data-submit-form>
+                    @csrf
+                    <div class="field">
+                        <label for="email">Correo electrónico</label>
+                        <input
+                            id="email"
+                            name="email"
+                            type="email"
+                            value="{{ old('email') }}"
+                            autocomplete="username"
+                            inputmode="email"
+                            required
+                            autofocus
+                            aria-describedby="email-help"
+                        >
+                        <p id="email-help" class="field__help">El backend actual identifica usuarios mediante correo electrónico.</p>
+                    </div>
+
+                    <div class="field">
+                        <label for="password">Contraseña</label>
+                        <div class="password-field">
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                autocomplete="current-password"
+                                required
+                            >
+                            <button type="button" class="password-toggle" aria-controls="password" aria-pressed="false" data-password-toggle>
+                                <span>Mostrar</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-support">
+                        <span>La sesión persistente se habilitará cuando exista un contrato seguro con Quarkus.</span>
+                        <a href="{{ route('password.request') }}">¿Olvidaste tu contraseña?</a>
+                    </div>
+
+                    <button class="button button--primary button--full" type="submit" data-submit-button>
+                        <span data-button-label>Iniciar sesión</span>
+                        <span class="button__loader" aria-hidden="true"></span>
+                    </button>
+                </form>
+
+                <div class="oauth-separator"><span>Otra opción</span></div>
+                <button class="button button--google button--full" type="button" disabled aria-describedby="google-status">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.2c0-.7-.1-1.4-.2-2H12v3.7h5a4.3 4.3 0 0 1-1.9 2.8v2.4h3.1c1.8-1.7 2.8-4.1 2.8-6.9Z" /><path d="M12 21c2.5 0 4.6-.8 6.2-2.2l-3.1-2.4c-.8.6-1.9.9-3.1.9a5.4 5.4 0 0 1-5.1-3.7H3.7V16A9.3 9.3 0 0 0 12 21Z" /><path d="M6.9 13.6a5.6 5.6 0 0 1 0-3.3V7.9H3.7a9 9 0 0 0 0 8.1l3.2-2.4Z" /><path d="M12 6.6c1.4 0 2.6.5 3.6 1.4l2.7-2.7A9 9 0 0 0 3.7 7.9l3.2 2.4A5.4 5.4 0 0 1 12 6.6Z" /></svg>
+                    Continuar con Google
+                </button>
+                <p id="google-status" class="integration-note">OAuth/OpenID Connect requiere credenciales y endpoints propios. No está configurado.</p>
+
+                @if ($demoEnabled)
+                    <section class="demo-access" aria-labelledby="demo-title">
+                        <div class="demo-access__heading">
+                            <h3 id="demo-title">Acceso rápido de demostración</h3>
+                            <span>Solo entorno local</span>
+                        </div>
+                        <div class="demo-users">
+                            @foreach ($demoUsers as $user)
+                                <button
+                                    type="button"
+                                    class="demo-user"
+                                    data-demo-user
+                                    data-email="{{ $user['email'] }}"
+                                    data-password="{{ $demoPassword ?? '' }}"
+                                >
+                                    <span class="demo-user__role">{{ $user['role'] }}</span>
+                                    <span class="demo-user__name">{{ $user['name'] }}</span>
+                                    <span class="demo-user__email">{{ $user['email'] }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                        <p class="integration-note">
+                            @if ($demoPassword)
+                                Las credenciales se completan únicamente en este entorno local.
+                            @else
+                                Se completará el correo. Define <code>CLINIC_DEMO_PASSWORD</code> en el entorno local para completar también la contraseña de prueba conocida.
+                            @endif
+                        </p>
+                    </section>
+                @endif
+
+                <p class="auth-switch">¿Aún no tienes cuenta? <a href="{{ route('register') }}">Registrarte como paciente</a></p>
+            </div>
+        </section>
+    </main>
+@endsection
