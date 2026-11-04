@@ -60,9 +60,13 @@
                             inputmode="email"
                             required
                             autofocus
-                            aria-describedby="email-help"
+                            aria-describedby="email-help @error('email') email-error @enderror"
+                            @error('email') aria-invalid="true" @enderror
                         >
                         <p id="email-help" class="field__help">El backend actual identifica usuarios mediante correo electrónico.</p>
+                        @error('email')
+                            <p id="email-error" class="field__error">{{ $message }}</p>
+                        @enderror
                     </div>
 
                     <div class="field">
@@ -74,15 +78,19 @@
                                 type="password"
                                 autocomplete="current-password"
                                 required
+                                @error('password') aria-invalid="true" aria-describedby="password-error" @enderror
                             >
                             <button type="button" class="password-toggle" aria-controls="password" aria-pressed="false" data-password-toggle>
                                 <span>Mostrar</span>
                             </button>
                         </div>
+                        @error('password')
+                            <p id="password-error" class="field__error">{{ $message }}</p>
+                        @enderror
                     </div>
 
                     <div class="form-support">
-                        <span>La sesión persistente se habilitará cuando exista un contrato seguro con Quarkus.</span>
+                        <span>La sesión se valida de forma segura con el servicio de la clínica.</span>
                         <a href="{{ route('password.request') }}">¿Olvidaste tu contraseña?</a>
                     </div>
 
@@ -112,7 +120,6 @@
                                     class="demo-user"
                                     data-demo-user
                                     data-email="{{ $user['email'] }}"
-                                    data-password="{{ $demoPassword ?? '' }}"
                                 >
                                     <span class="demo-user__role">{{ $user['role'] }}</span>
                                     <span class="demo-user__name">{{ $user['name'] }}</span>
@@ -121,11 +128,7 @@
                             @endforeach
                         </div>
                         <p class="integration-note">
-                            @if ($demoPassword)
-                                Las credenciales se completan únicamente en este entorno local.
-                            @else
-                                Se completará el correo. Define <code>CLINIC_DEMO_PASSWORD</code> en el entorno local para completar también la contraseña de prueba conocida.
-                            @endif
+                            Selecciona un perfil para completar el correo. Escribe la contraseña de desarrollo conocida; nunca se incluye en el HTML.
                         </p>
                     </section>
                 @endif

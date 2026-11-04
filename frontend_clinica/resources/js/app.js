@@ -146,21 +146,15 @@ document.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
 document.querySelectorAll('[data-demo-user]').forEach((demoButton) => {
     demoButton.addEventListener('click', () => {
         const email = document.getElementById('email');
-        const password = document.getElementById('password');
 
         if (email) {
             email.value = demoButton.dataset.email ?? '';
             email.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        if (password && demoButton.dataset.password) {
-            password.value = demoButton.dataset.password;
-            password.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
         document.querySelectorAll('[data-demo-user]').forEach((button) => button.removeAttribute('aria-pressed'));
         demoButton.setAttribute('aria-pressed', 'true');
-        (demoButton.dataset.password ? password : email)?.focus();
+        email?.focus();
     });
 });
 

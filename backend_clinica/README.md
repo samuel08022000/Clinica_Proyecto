@@ -12,6 +12,62 @@ You can run your application in dev mode that enables live coding using:
 ./mvnw quarkus:dev
 ```
 
+## PostgreSQL y credenciales demo locales
+
+Las credenciales de PostgreSQL y la contrasena comun de los usuarios demo no se
+guardan en Git. Cada integrante prepara su entorno local de esta forma:
+
+1. Copiar `.env.docker.example` como `.env` en la raiz y definir credenciales
+   PostgreSQL y pgAdmin propias.
+2. Iniciar PostgreSQL:
+
+```powershell
+docker compose up -d postgres_db
+```
+
+Compose no fija `container_name`, así que distintos clones no comparten nombres
+globales. Antes de levantarlo, compruebe que `5433` esté libre. Si ya hay una
+instancia autorizada en ese puerto, reutilícela; en caso contrario defina otro
+`POSTGRES_HOST_PORT` en el `.env` raíz y use el mismo puerto en la URL JDBC.
+
+3. Configurar Quarkus localmente. Puede copiarse `.env.example` como `.env` dentro
+   de `backend_clinica` y completar la clave PostgreSQL local. El JDBC predeterminado
+   apunta a `127.0.0.1:5433/db_clinica`.
+4. Preparar la V3 exclusiva de desarrollo:
+
+```powershell
+./scripts/dev/prepare-demo-credentials.ps1
+```
+
+El comando solicita dos veces una contrasena enmascarada, genera un BCrypt costo 12
+y crea `db/dev-migration/V3__corregir_credenciales_usuarios_demo.sql`. El archivo se
+ignora en Git. Los integrantes deben introducir la misma contrasena, compartida por
+un gestor de secretos del equipo; cada BCrypt sera diferente por su sal aleatoria.
+
+5. Arrancar Quarkus en perfil `dev`:
+
+```powershell
+./mvnw quarkus:dev
+```
+
+Flyway aplica V1 y V2 desde el classpath y la V3 local desde `db/dev-migration`.
+La V3 comprueba los cuatro correos, nombres, roles y perfiles antes de actualizar
+unicamente `usuarios.password_hash`. Si falta un registro, toda la migracion falla.
+
+La ubicacion de desarrollo no se carga con perfiles de produccion. Nunca copie la
+V3 generada a `src/main/resources/db/migration`.
+
+Con Quarkus en el puerto normal `8080`, la verificación integral se ejecuta desde
+la raíz del repositorio con:
+
+```powershell
+./backend_clinica/scripts/dev/verify-demo-logins.ps1
+```
+
+La contraseña se lee como `SecureString`, se entrega al proceso de prueba mediante
+una variable efímera y se elimina al finalizar. No la escriba en argumentos, `.env`,
+HTML, JavaScript ni registros.
+
 > **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
 
 ## Packaging and running the application

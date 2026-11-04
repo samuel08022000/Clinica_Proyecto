@@ -15,38 +15,69 @@ class QuarkusApiClient
         $this->baseUrl = rtrim((string) config('services.quarkus.base_url'), '/');
     }
 
-    protected function client(): PendingRequest
+    protected function client(bool $authenticated = true): PendingRequest
     {
-        return Http::acceptJson()
+        $client = Http::acceptJson()
             ->contentType('application/json')
             ->timeout((int) config('services.quarkus.timeout', 8))
-            ->connectTimeout((int) config('services.quarkus.connect_timeout', 3))
-            ->withHeaders([
-                'X-Actor-Cod-Usu' => session('cod_usu', ''),
-                'X-Actor-Rol' => session('cod_rol', ''),
-            ]);
+            ->connectTimeout((int) config('services.quarkus.connect_timeout', 3));
+
+        $token = $authenticated ? session('auth_token') : null;
+
+        return filled($token) ? $client->withToken((string) $token) : $client;
     }
 
     public function get(string $endpoint, array $query = []): Response
     {
         return $this->client()->get(
-            "{$this->baseUrl}/".ltrim($endpoint, '/'),
+            $this->url($endpoint),
             array_filter($query, fn (mixed $value): bool => $value !== null && $value !== '')
         );
     }
 
     public function post(string $endpoint, array $data = []): Response
     {
-        return $this->client()->post("{$this->baseUrl}/".ltrim($endpoint, '/'), $data);
+        return $this->client()->post($this->url($endpoint), $data);
     }
 
     public function put(string $endpoint, array $data = []): Response
     {
-        return $this->client()->put("{$this->baseUrl}/".ltrim($endpoint, '/'), $data);
+        return $this->client()->put($this->url($endpoint), $data);
     }
 
     public function patch(string $endpoint, array $data = []): Response
     {
-        return $this->client()->patch("{$this->baseUrl}/".ltrim($endpoint, '/'), $data);
+        return $this->client()->patch($this->url($endpoint), $data);
+    }
+
+    public function login(string $email, string $password): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.login') ?: 'auth/login'),
+            ['email' => $email, 'password' => $password]
+        );
+    }
+
+    public function authenticatedUser(): Response
+    {
+        return $this->client()->get($this->url(config('clinic.endpoints.me') ?: 'auth/me'));
+    }
+
+    public function authorizeRoles(array $roles): Response
+    {
+        return $this->client()->get(
+            $this->url(config('clinic.endpoints.authorize') ?: 'auth/authorize'),
+            ['roles' => implode(',', $roles)]
+        );
+    }
+
+    public function logout(): Response
+    {
+        return $this->client()->post($this->url(config('clinic.endpoints.logout') ?: 'auth/logout'));
+    }
+
+    protected function url(string $endpoint): string
+    {
+        return "{$this->baseUrl}/".ltrim($endpoint, '/');
     }
 }

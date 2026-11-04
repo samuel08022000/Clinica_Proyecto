@@ -18,7 +18,7 @@ El proyecto separa estrictamente el **Frontend Web** del **Backend API / Base de
 [Navegador Web]
        │  1. Petición HTTP (GET / POST desde formulario Blade)
        ▼
-[Laravel 12: frontend_clinica] (Puerto 8000)
+[Laravel 13: frontend_clinica] (Puerto 8000)
   ├── routes/web.php               -> Define la ruta web y aplica el middleware CheckRolSession
   ├── app/Http/Controllers/        -> Controlador Web recibe Request y llama a QuarkusApiClient
   ├── app/Services/QuarkusApiClient-> Cliente HTTP que envía JSON a http://localhost:8080/api/v1
@@ -30,9 +30,9 @@ El proyecto separa estrictamente el **Frontend Web** del **Backend API / Base de
   ├── org.clinica.service          -> Lógica de negocio (@Transactional) + DbActorHelper
   ├── org.clinica.repository       -> Repositorios Panache + CitaFunctionRepository (Funciones SQL)
   └── org.clinica.entity           -> 17 Entidades JPA mapeadas al esquema public
-       │  3. Conexión JDBC / Flyway (Puerto 5432)
+       │  3. Conexión JDBC / Flyway (host 5433 → contenedor 5432)
        ▼
-[PostgreSQL 15: Docker Container] (Puerto 5432)
+[PostgreSQL 15: Docker Container] (host 5433, interno 5432)
   ├── V1__control_citas_postgresql_completo.sql -> 18 Tablas, 2 Vistas, Triggers y Funciones PL/pgSQL
   └── V2__seed_usuarios_prueba.sql              -> 4 Usuarios por Rol, Especialidades, Horarios y Slots
 ```
@@ -47,23 +47,37 @@ El proyecto separa estrictamente el **Frontend Web** del **Backend API / Base de
 
 ### Opción A: Modo Desarrollo Recomendado (BD en Docker + Quarkus/Laravel en tu terminal)
 1. Asegúrate de tener **Docker Desktop** abierto.
-2. En la raíz del proyecto, levanta PostgreSQL y pgAdmin:
-   ```bash
-   docker compose up -d
+2. Copia `.env.docker.example` como `.env` en la raíz y define credenciales locales
+   propias. Este archivo está ignorado por Git y no debe compartirse.
+3. Comprueba que el puerto elegido esté libre y levanta solo PostgreSQL:
+   ```powershell
+   Get-NetTCPConnection -State Listen -LocalPort 5433 -ErrorAction SilentlyContinue
+   docker compose up -d postgres_db
    ```
-   * **PostgreSQL:** corriendo en `localhost:5432` (BD: `db_clinica`, Usuario: `admin_clinica`, Clave: `password_seguro_123`).
-   * **pgAdmin 4 (Visor Web):** disponible en [http://localhost:5050](http://localhost:5050) (Login: `admin@clinica.bo` / Clave: `admin123`).
+   PostgreSQL queda en `127.0.0.1:5433` por defecto. Compose no fija nombres
+   globales de contenedor, por lo que cada clon usa nombres asociados a su proyecto.
+   Si `5433` ya está ocupado por otra instancia, no levantes un segundo contenedor:
+   reutiliza la instancia autorizada o define otro `POSTGRES_HOST_PORT` en `.env` y
+   actualiza la URL JDBC local de Quarkus con el mismo puerto.
 
-3. **Levantar el Backend (Quarkus) y generar la Base de Datos automáticamente:**
-   ```bash
+4. **Configurar y levantar el Backend (Quarkus):**
+   ```powershell
    cd backend_clinica
+   Copy-Item .env.example .env
+   # Completa QUARKUS_DATASOURCE_USERNAME y QUARKUS_DATASOURCE_PASSWORD localmente.
+   ./scripts/dev/prepare-demo-credentials.ps1
    ./mvnw quarkus:dev
    ```
-   * Al arrancar Quarkus, **Flyway ejecutará automáticamente** `V1__control_citas_postgresql_completo.sql` y `V2__seed_usuarios_prueba.sql`.
-   * No necesitas ejecutar ningún script SQL manualmente en DBeaver ni pgAdmin.
+   * Comparte la contraseña demo únicamente por el gestor de secretos del equipo.
+   * El script genera una V3 local ignorada por Git, con BCrypt costo 12, sin imprimir
+     la contraseña ni el hash.
+   * En perfil `dev`, Flyway ejecuta V1/V2 desde el classpath y la V3 desde
+     `backend_clinica/db/dev-migration`. Fuera de `dev`, esa ubicación no se carga.
+   * La V3 valida la base `db_clinica`, el marcador `development` y los cuatro
+     usuarios/roles/perfiles antes de actualizar; si falta alguno, no actualiza nada.
    * API REST disponible en: `http://localhost:8080` (Swagger/Dev UI en `http://localhost:8080/q/dev`).
 
-4. **Levantar el Frontend (Laravel):**
+5. **Levantar el Frontend (Laravel):**
    Abre otra terminal:
    ```bash
    cd frontend_clinica
@@ -90,13 +104,8 @@ Si deseas encender la base de datos, el backend Quarkus y el frontend Laravel de
 docker compose --profile fullstack up -d
 ```
 
-### 🔄 ¿Cómo reiniciar la Base de Datos desde cero si hiciste pruebas sucias?
-Si quieres borrar tus datos de prueba locales y que Quarkus regenere todas las tablas y los datos iniciales limpios:
-```bash
-docker compose down -v
-docker compose up -d
-```
-*(Al volver a correr `./mvnw quarkus:dev`, Flyway reconstruirá todo en 2 segundos).*
+> No uses `docker compose down -v` ni `flyway clean` en bases compartidas: eliminan
+> datos. La Fase 2A no requiere recrear PostgreSQL.
 
 ---
 
@@ -104,12 +113,26 @@ docker compose up -d
 
 Al iniciar Quarkus por primera vez, ya tienes creados estos **4 usuarios oficiales**, además de **3 especialidades** (`Medicina General`, `Cardiología`, `Pediatría`), horarios de lunes a viernes y los **slots de agenda generados para los próximos 14 días**:
 
-| Rol en el Sistema | Código Rol | Correo Electrónico | Contraseña de Prueba | Perfil Asociado |
-| :--- | :---: | :--- | :---: | :--- |
-| **Paciente** | `ROL001` | `samuel.paciente@unifranz.edu.bo` | *(Hash Bcrypt Seed)* | `PAC000001` (Teléfono verificado) |
-| **Secretario(a)** | `ROL002` | `angela.secretaria@clinica.bo` | *(Hash Bcrypt Seed)* | `SEC000001` |
-| **Doctor** | `ROL003` | `dilan.doctor@clinica.bo` | *(Hash Bcrypt Seed)* | `MED000001` (Vinculado a las 3 esp.) |
-| **Administrador** | `ROL004` | `yesid.admin@clinica.bo` | *(Hash Bcrypt Seed)* | Superusuario Admin |
+| Rol en el Sistema | Código Rol | Correo Electrónico | Perfil Asociado |
+| :--- | :---: | :--- | :--- |
+| **Paciente** | `ROL001` | `samuel.paciente@unifranz.edu.bo` | `PAC000001` (Teléfono verificado) |
+| **Secretario(a)** | `ROL002` | `angela.secretaria@clinica.bo` | `SEC000001` |
+| **Doctor** | `ROL003` | `dilan.doctor@clinica.bo` | `MED000001` (Vinculado a las 3 esp.) |
+| **Administrador** | `ROL004` | `yesid.admin@clinica.bo` | Superusuario Admin |
+
+La contraseña común no se almacena en Git. Una vez iniciados Quarkus (`8080`) y
+Laravel (`8000`), verifica las cuatro cuentas desde la raíz del repositorio:
+
+```powershell
+./backend_clinica/scripts/dev/verify-demo-logins.ps1
+```
+
+El script pide la contraseña en modo enmascarado y ejecuta la prueba real sin
+persistirla. Si Quarkus se inició deliberadamente en otro puerto local, indícalo:
+
+```powershell
+./backend_clinica/scripts/dev/verify-demo-logins.ps1 -QuarkusApiUrl http://127.0.0.1:8081/api/v1
+```
 
 ---
 

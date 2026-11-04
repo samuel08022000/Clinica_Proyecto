@@ -26,3 +26,10 @@ Route::controller(AuthController::class)->group(function (): void {
 
     Route::get('/verificar-correo', 'showEmailVerification')->name('verification.notice');
 });
+
+Route::controller(AuthController::class)->group(function (): void {
+    Route::get('/paciente/inicio', 'dashboard')->middleware('rol:ROL001')->name('paciente.home');
+    Route::get('/secretaria/inicio', 'dashboard')->middleware('rol:ROL002')->name('secretaria.home');
+    Route::get('/medico/inicio', 'dashboard')->middleware('rol:ROL003')->name('medico.home');
+    Route::get('/administracion/inicio', 'dashboard')->middleware('rol:ROL004')->name('administracion.home');
+});

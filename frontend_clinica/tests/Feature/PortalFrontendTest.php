@@ -9,7 +9,6 @@ class PortalFrontendTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-
         $this->withoutVite();
     }
 
@@ -24,20 +23,13 @@ class PortalFrontendTest extends TestCase
         $response->assertDontSee('Medicina General');
     }
 
-    public function test_login_form_is_available_and_reports_missing_backend_contract(): void
+    public function test_login_form_is_available_with_csrf_protection(): void
     {
         $this->get(route('login'))
             ->assertOk()
             ->assertSee('Iniciar sesión')
-            ->assertSee('Acceso aún no habilitado.')
+            ->assertDontSee('Acceso aún no habilitado.')
             ->assertSee('name="_token"', false);
-
-        $this->post(route('login.attempt'), [
-            'email' => 'paciente@example.test',
-            'password' => 'Password123',
-        ])->assertRedirect()
-            ->assertSessionHasErrors('authentication')
-            ->assertSessionHasInput('email', 'paciente@example.test');
     }
 
     public function test_demo_credentials_are_not_rendered_outside_local_or_demo(): void
