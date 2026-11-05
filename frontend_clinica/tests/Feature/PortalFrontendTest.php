@@ -46,6 +46,13 @@ class PortalFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('Crea tu cuenta de paciente')
             ->assertSee('Verificación telefónica')
+            ->assertSee('Crear cuenta y enviar código')
+            ->assertSee('name="_token"', false);
+
+        $this->get(route('verification.phone'))
+            ->assertOk()
+            ->assertSee('Confirma tu teléfono')
+            ->assertSee('Solicitar código')
             ->assertSee('name="_token"', false);
 
         $this->get(route('password.request'))

@@ -43,6 +43,7 @@ public class AuthAccountGateway {
         String profileStatus = null;
         OffsetDateTime blockedUntil = null;
         boolean profilePresent = true;
+        Boolean phoneVerified = null;
 
         switch (usuario.codRol) {
             case "ROL001" -> {
@@ -51,6 +52,7 @@ public class AuthAccountGateway {
                 if (paciente.isPresent()) {
                     profileStatus = paciente.get().estadoCuenta;
                     blockedUntil = paciente.get().bloqueadoHasta;
+                    phoneVerified = paciente.get().telefonoVerificado;
                 }
             }
             case "ROL002" -> {
@@ -78,7 +80,8 @@ public class AuthAccountGateway {
                 roleStatus,
                 profilePresent,
                 profileStatus,
-                blockedUntil);
+                blockedUntil,
+                phoneVerified);
     }
 
     public record AuthAccount(
@@ -92,6 +95,7 @@ public class AuthAccountGateway {
             String roleStatus,
             boolean profilePresent,
             String profileStatus,
-            OffsetDateTime blockedUntil) {
+            OffsetDateTime blockedUntil,
+            Boolean phoneVerified) {
     }
 }

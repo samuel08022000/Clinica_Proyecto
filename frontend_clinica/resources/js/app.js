@@ -172,7 +172,7 @@ document.querySelectorAll('[data-submit-form]').forEach((form) => {
         button.setAttribute('aria-busy', 'true');
 
         if (label) {
-            label.textContent = 'Verificando…';
+            label.textContent = button.dataset.loadingLabel ?? 'Procesando…';
         }
     });
 });
@@ -226,3 +226,31 @@ if (multistepForm) {
         button.addEventListener('click', () => updateStep(activeStep - 1));
     });
 }
+
+document.querySelectorAll('[data-resend-form]').forEach((form) => {
+    const button = form.querySelector('[data-resend-button]');
+    const status = form.querySelector('[data-resend-status]');
+    const availableAt = Date.parse(form.dataset.resendAt ?? '');
+
+    if (!button || !status || Number.isNaN(availableAt)) {
+        return;
+    }
+
+    let timer = null;
+    const updateResend = () => {
+        const remaining = Math.max(0, Math.ceil((availableAt - Date.now()) / 1000));
+        button.disabled = remaining > 0;
+        status.textContent = remaining > 0
+            ? `Podrás solicitar otro código en ${remaining} segundos.`
+            : 'Ya puedes solicitar un nuevo código.';
+
+        if (remaining === 0 && timer !== null) {
+            window.clearInterval(timer);
+        }
+    };
+
+    updateResend();
+    if (availableAt > Date.now()) {
+        timer = window.setInterval(updateResend, 1000);
+    }
+});

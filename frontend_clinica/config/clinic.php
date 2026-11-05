@@ -29,8 +29,11 @@ return [
         'me' => env('QUARKUS_ME_ENDPOINT', 'auth/me'),
         'authorize' => env('QUARKUS_AUTHORIZE_ENDPOINT', 'auth/authorize'),
         'logout' => env('QUARKUS_LOGOUT_ENDPOINT', 'auth/logout'),
-        'register' => env('QUARKUS_REGISTER_ENDPOINT'),
-        'verify_otp' => env('QUARKUS_VERIFY_OTP_ENDPOINT'),
+        'register' => env('QUARKUS_REGISTER_ENDPOINT', 'auth/register'),
+        'request_otp' => env('QUARKUS_REQUEST_OTP_ENDPOINT', 'auth/otp/request'),
+        'verify_otp' => env('QUARKUS_VERIFY_OTP_ENDPOINT', 'auth/otp/verify'),
+        'resend_otp' => env('QUARKUS_RESEND_OTP_ENDPOINT', 'auth/otp/resend'),
+        'otp_status' => env('QUARKUS_OTP_STATUS_ENDPOINT', 'auth/otp/status'),
         'password_recovery' => env('QUARKUS_PASSWORD_RECOVERY_ENDPOINT'),
     ],
 

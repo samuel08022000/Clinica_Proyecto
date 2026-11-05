@@ -26,7 +26,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?Define PGADMIN_DEFAULT_EMAIL en .env}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?Define PGADMIN_DEFAULT_PASSWORD en .env}
     ports:
-      - "5050:80"
+      - "127.0.0.1:${PGADMIN_HOST_PORT:-5050}:80"
     depends_on:
       postgres_db:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
       QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
       QUARKUS_HTTP_HOST: 0.0.0.0
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${QUARKUS_HOST_PORT:-8080}:8080"
     command: ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
     depends_on:
       postgres_db:
@@ -62,7 +62,7 @@ services:
       QUARKUS_API_URL: http://backend_quarkus:8080/api/v1
       SESSION_DRIVER: file
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${LARAVEL_HOST_PORT:-8000}:8000"
     command: sh -c "php artisan serve --host=0.0.0.0 --port=8000"
     depends_on:
       - backend_quarkus

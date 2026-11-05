@@ -58,6 +58,46 @@ class QuarkusApiClient
         );
     }
 
+    public function registerPatient(array $data): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.register') ?: 'auth/register'),
+            $data
+        );
+    }
+
+    public function requestOtp(string $email, string $password): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.request_otp') ?: 'auth/otp/request'),
+            ['email' => $email, 'password' => $password]
+        );
+    }
+
+    public function verifyOtp(string $verificationToken, string $code): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.verify_otp') ?: 'auth/otp/verify'),
+            ['verificationToken' => $verificationToken, 'code' => $code]
+        );
+    }
+
+    public function resendOtp(string $verificationToken): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.resend_otp') ?: 'auth/otp/resend'),
+            ['verificationToken' => $verificationToken]
+        );
+    }
+
+    public function otpStatus(string $verificationToken): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.otp_status') ?: 'auth/otp/status'),
+            ['verificationToken' => $verificationToken]
+        );
+    }
+
     public function authenticatedUser(): Response
     {
         return $this->client()->get($this->url(config('clinic.endpoints.me') ?: 'auth/me'));

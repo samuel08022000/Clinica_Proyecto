@@ -134,6 +134,12 @@ public class AuthService {
         if (!"Activo".equals(account.profileStatus())) {
             throw new AuthException(403, "PROFILE_DISABLED", "El perfil de la cuenta esta inactivo.");
         }
+        if ("ROL001".equals(account.roleCode()) && !Boolean.TRUE.equals(account.phoneVerified())) {
+            throw new AuthException(
+                    403,
+                    "PHONE_VERIFICATION_REQUIRED",
+                    "Debes verificar tu telefono antes de iniciar sesion.");
+        }
     }
 
     private static UserResponse toUserResponse(AuthAccount account) {

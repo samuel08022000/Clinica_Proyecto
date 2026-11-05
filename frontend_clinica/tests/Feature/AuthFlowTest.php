@@ -78,6 +78,22 @@ class AuthFlowTest extends TestCase
             ->assertSessionMissing('auth_token');
     }
 
+    public function test_pending_patient_is_redirected_to_phone_verification_message(): void
+    {
+        Http::fake([
+            '*/auth/login' => Http::response([
+                'error' => ['code' => 'PHONE_VERIFICATION_REQUIRED', 'message' => 'Backend'],
+            ], 403),
+        ]);
+
+        $this->from(route('login'))->post(route('login.attempt'), [
+            'email' => 'pendiente@clinica.bo',
+            'password' => 'PacienteSegura123',
+        ])->assertRedirect(route('verification.phone'))
+            ->assertSessionHasErrors('verification')
+            ->assertSessionMissing('auth_token');
+    }
+
     public function test_connection_failure_returns_a_recoverable_error(): void
     {
         Http::fake(fn () => throw new ConnectionException('Quarkus no disponible'));

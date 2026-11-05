@@ -14,6 +14,17 @@ Route::controller(AuthController::class)->group(function (): void {
     Route::get('/registro', 'showRegistration')->name('register');
     Route::post('/registro', 'register')->middleware('throttle:3,1')->name('register.store');
 
+    Route::get('/verificar-telefono', 'showPhoneVerification')->name('verification.phone');
+    Route::post('/verificar-telefono', 'verifyPhoneOtp')
+        ->middleware('throttle:5,1')
+        ->name('verification.phone.verify');
+    Route::post('/verificar-telefono/reenviar', 'resendPhoneOtp')
+        ->middleware('throttle:3,1')
+        ->name('verification.phone.resend');
+    Route::post('/verificar-telefono/solicitar', 'requestPhoneVerification')
+        ->middleware('throttle:5,1')
+        ->name('verification.phone.request');
+
     Route::get('/recuperar-contrasena', 'showForgotPassword')->name('password.request');
     Route::post('/recuperar-contrasena', 'requestPasswordReset')
         ->middleware('throttle:3,1')

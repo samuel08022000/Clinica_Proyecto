@@ -68,6 +68,70 @@ La contraseña se lee como `SecureString`, se entrega al proceso de prueba media
 una variable efímera y se elimina al finalizar. No la escriba en argumentos, `.env`,
 HTML, JavaScript ni registros.
 
+## Registro de pacientes y verificación OTP
+
+No se requiere una migración adicional. El módulo reutiliza el esquema de V1:
+
+- `public.registrar_paciente`: crea `usuarios` y `pacientes` atómicamente con `ROL001`.
+- `public.crear_otp`: genera seis dígitos con `gen_random_bytes`, guarda SHA-256,
+  invalida el código anterior y aplica límites de 60 segundos y 5 solicitudes/hora.
+- `public.validar_otp`: bloquea la fila con `FOR UPDATE`, permite 3 intentos, consume
+  el código y marca `telefono_verificado=true`.
+
+Endpoints públicos, siempre con `Cache-Control: no-store`:
+
+| Método | Ruta | Resultado |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | `201`, paciente pendiente y desafío opaco |
+| `POST` | `/api/v1/auth/otp/request` | `202`, retoma el flujo con correo y contraseña |
+| `POST` | `/api/v1/auth/otp/verify` | `200`, consume el OTP correcto |
+| `POST` | `/api/v1/auth/otp/resend` | `202`, invalida el OTP anterior |
+| `POST` | `/api/v1/auth/otp/status` | Estado asociado al desafío opaco; token en JSON, nunca en URL |
+| `POST` | `/api/v1/auth/otp/demo-code` | Solo DEMO local y con clave externa |
+
+Ejemplo del contrato de registro, sin contraseñas ni códigos en la respuesta:
+
+```json
+{
+  "data": {
+    "patientId": "PAC000000",
+    "roleCode": "ROL001",
+    "phoneVerificationRequired": true,
+    "verification": {
+      "verificationToken": "<token-opaco>",
+      "maskedDestination": "*** *** 000",
+      "otpExpiresAt": "<fecha-ISO-8601>",
+      "resendAvailableAt": "<fecha-ISO-8601>",
+      "verificationExpiresAt": "<fecha-ISO-8601>"
+    }
+  }
+}
+```
+
+### Proveedor DEMO local
+
+En `.env` local, nunca en Git:
+
+```env
+OTP_DELIVERY_PROVIDER=demo
+OTP_DEMO_ACCESS_KEY=<clave-aleatoria-de-al-menos-24-caracteres>
+```
+
+Arranque Quarkus con el perfil `dev`. Después de registrar o reenviar un código,
+consúltelo desde la raíz del repositorio:
+
+```powershell
+./backend_clinica/scripts/dev/read-demo-otp.ps1
+```
+
+El endpoint DEMO se niega en perfil de producción, fuera de loopback o con una clave
+incorrecta. No registra códigos. Para producción, deje el proveedor en `disabled`
+hasta implementar `OtpDeliveryProvider` con un gateway SMS autorizado.
+
+Los desafíos opacos son locales al proceso, igual que las sesiones actuales. Reiniciar
+Quarkus los revoca; el paciente puede retomar el proceso con correo y contraseña. Antes
+de desplegar varias instancias se debe mover sesiones y desafíos a un almacén compartido.
+
 > **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
 
 ## Packaging and running the application

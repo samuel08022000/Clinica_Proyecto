@@ -1311,6 +1311,17 @@ p {
     background: #fff;
 }
 
+.registration-card > h2 {
+    margin-bottom: 0.75rem;
+    font-size: clamp(1.8rem, 3vw, 2.5rem);
+    font-weight: 500;
+    letter-spacing: -0.025em;
+}
+
+.registration-layout--verification {
+    align-items: center;
+}
+
 .step-progress {
     margin-bottom: 2rem;
 }
@@ -1438,6 +1449,21 @@ p {
     gap: 0.5rem;
     color: var(--muted);
     font-size: var(--step-small);
+}
+
+.field--otp input {
+    max-width: 14rem;
+    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.35em;
+    text-align: center;
+}
+
+.otp-resend-form {
+    display: grid;
+    justify-items: start;
+    gap: 0.25rem;
+    margin-top: 1.25rem;
 }
 
 .compact-auth-shell {

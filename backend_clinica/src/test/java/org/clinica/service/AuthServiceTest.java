@@ -99,6 +99,18 @@ class AuthServiceTest {
     }
 
     @Test
+    void patientWithoutVerifiedPhoneCannotLogin() {
+        gateway.put(account("USU000005", "pendiente@clinica.bo", "ROL001", "Paciente",
+                "Activo", "Activo", true, "Activo", null, false));
+
+        AuthException error = assertThrows(AuthException.class,
+                () -> service.login("pendiente@clinica.bo", PASSWORD, "127.0.0.1"));
+
+        assertEquals(403, error.status());
+        assertEquals("PHONE_VERIFICATION_REQUIRED", error.code());
+    }
+
+    @Test
     void unrecognizedRoleIsRejected() {
         gateway.put(account("USU000004", "sinrol@clinica.bo", "ROL999", null,
                 "Activo", null, false, null, null));
@@ -176,6 +188,21 @@ class AuthServiceTest {
             boolean profilePresent,
             String profileStatus,
             OffsetDateTime blockedUntil) {
+        return account(id, email, roleCode, roleName, userStatus, roleStatus,
+                profilePresent, profileStatus, blockedUntil, true);
+    }
+
+    private static AuthAccount account(
+            String id,
+            String email,
+            String roleCode,
+            String roleName,
+            String userStatus,
+            String roleStatus,
+            boolean profilePresent,
+            String profileStatus,
+            OffsetDateTime blockedUntil,
+            boolean phoneVerified) {
         return new AuthAccount(
                 id,
                 "Usuario de prueba",
@@ -187,7 +214,8 @@ class AuthServiceTest {
                 roleStatus,
                 profilePresent,
                 profileStatus,
-                blockedUntil);
+                blockedUntil,
+                phoneVerified);
     }
 
     private static final class FakeAccountGateway extends AuthAccountGateway {

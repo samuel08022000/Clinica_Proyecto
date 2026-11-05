@@ -1,5 +1,6 @@
 package org.clinica.dto;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 /** Contratos JSON del modulo de autenticacion. Nunca incluyen hashes de contrasena. */
@@ -9,6 +10,25 @@ public final class AuthDtos {
     }
 
     public record LoginRequest(String email, String password) {
+    }
+
+    public record RegisterPatientRequest(
+            String nombreCompleto,
+            String email,
+            String password,
+            String ci,
+            LocalDate fechaNacimiento,
+            String telefono,
+            String ciudadResidencia) {
+    }
+
+    public record OtpRequest(String email, String password) {
+    }
+
+    public record OtpVerificationRequest(String verificationToken, String code) {
+    }
+
+    public record OtpResendRequest(String verificationToken) {
     }
 
     public record RoleResponse(String code, String name, String slug) {
@@ -35,6 +55,36 @@ public final class AuthDtos {
     }
 
     public record LogoutData(boolean revoked) {
+    }
+
+    public record OtpChallengeData(
+            String verificationToken,
+            String maskedDestination,
+            OffsetDateTime otpExpiresAt,
+            OffsetDateTime resendAvailableAt,
+            OffsetDateTime verificationExpiresAt) {
+    }
+
+    public record RegistrationData(
+            String patientId,
+            String roleCode,
+            boolean phoneVerificationRequired,
+            OtpChallengeData verification) {
+    }
+
+    public record OtpVerificationData(boolean verified, String nextAction) {
+    }
+
+    public record OtpStatusData(
+            boolean verified,
+            String maskedDestination,
+            OffsetDateTime verificationExpiresAt) {
+    }
+
+    public record DemoOtpData(String code, OffsetDateTime expiresAt) {
+    }
+
+    public record DemoOtpRequest(String verificationToken, String destination) {
     }
 
     public record DataResponse<T>(T data) {

@@ -59,6 +59,9 @@ El proyecto separa estrictamente el **Frontend Web** del **Backend API / Base de
    Si `5433` ya está ocupado por otra instancia, no levantes un segundo contenedor:
    reutiliza la instancia autorizada o define otro `POSTGRES_HOST_PORT` en `.env` y
    actualiza la URL JDBC local de Quarkus con el mismo puerto.
+   Los puertos de pgAdmin, Quarkus y Laravel también son configurables mediante
+   `PGADMIN_HOST_PORT`, `QUARKUS_HOST_PORT` y `LARAVEL_HOST_PORT`; todos se publican
+   únicamente en `127.0.0.1` para evitar colisiones o exposición en la red local.
 
 4. **Configurar y levantar el Backend (Quarkus):**
    ```powershell
@@ -133,6 +136,53 @@ persistirla. Si Quarkus se inició deliberadamente en otro puerto local, indíca
 ```powershell
 ./backend_clinica/scripts/dev/verify-demo-logins.ps1 -QuarkusApiUrl http://127.0.0.1:8081/api/v1
 ```
+
+---
+
+## 📱 Registro de pacientes y OTP telefónico (Fase 2B)
+
+V1 ya contiene las tablas y funciones necesarias para registro y OTP. La Fase 2B
+no agrega migraciones: reutiliza `registrar_paciente`, `crear_otp` y `validar_otp`.
+La cuenta se considera pendiente mientras `pacientes.telefono_verificado=false` y
+Quarkus rechaza su login hasta completar la verificación.
+
+Para desarrollo local, configure en `backend_clinica/.env`:
+
+```env
+OTP_DELIVERY_PROVIDER=demo
+OTP_DEMO_ACCESS_KEY=<clave-local-aleatoria-de-al-menos-24-caracteres>
+```
+
+El archivo `.env` está ignorado. No comparta esa clave por Git, capturas o registros.
+Para probar el proveedor DEMO use la opción A (Quarkus ejecutado directamente en la
+máquina local). El perfil `fullstack` no publica la clave DEMO dentro del contenedor
+ni relaja la restricción de acceso loopback.
+El proveedor DEMO solo funciona con el perfil Quarkus `dev` o `test`, desde loopback,
+y conserva temporalmente el código en memoria. Para leer el código después de enviar
+el formulario de registro:
+
+```powershell
+./backend_clinica/scripts/dev/read-demo-otp.ps1
+```
+
+El script solicita el teléfono y la clave de acceso sin guardar esta última. El código
+se muestra únicamente en esa consola local. Nunca redirija su salida a un archivo o log.
+
+Flujo para probarlo:
+
+1. Inicie PostgreSQL autorizado, Quarkus en `8080` y Laravel en `8000`.
+2. Abra `http://127.0.0.1:8000/registro` y cree un paciente ficticio.
+3. Consulte el OTP con el script local e ingréselo en `/verificar-telefono`.
+4. Confirme que el login se rechaza antes de verificar y funciona después.
+
+Controles implementados: BCrypt costo 12, OTP SHA-256 de seis dígitos, vigencia de
+cinco minutos, tres intentos, espera de 60 segundos entre reenvíos, máximo de cinco
+emisiones por hora, invalidación del código previo y bloqueo de reutilización mediante
+`FOR UPDATE` en PostgreSQL. El teléfono no es único porque el esquema permite que más
+de un paciente comparta un número; correo y CI sí tienen índices únicos.
+
+En producción mantenga `OTP_DELIVERY_PROVIDER=disabled` hasta implementar y autorizar
+un proveedor SMS real. No presente el modo DEMO como entrega SMS.
 
 ---
 
