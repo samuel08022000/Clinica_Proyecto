@@ -2,10 +2,10 @@ package org.clinica.service;
 
 import java.time.Instant;
 
-/** Puerto de entrega OTP. Una integracion SMS real debe implementar este contrato. */
+/** Puerto de entrega OTP. El codigo llega generado; ningun proveedor debe regenerarlo. */
 public interface OtpDeliveryProvider {
 
-    void deliver(OtpMessage message);
+    DeliveryReceipt deliver(OtpMessage message);
 
     void discard(String verificationToken);
 
@@ -14,5 +14,8 @@ public interface OtpDeliveryProvider {
             String destination,
             String code,
             Instant expiresAt) {
+    }
+
+    record DeliveryReceipt(String mode, boolean deliveryConfirmed) {
     }
 }

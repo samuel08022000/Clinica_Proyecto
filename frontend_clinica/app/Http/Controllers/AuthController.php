@@ -56,11 +56,11 @@ class AuthController extends Controller
 
         if (! $response->successful()) {
             $errorCode = (string) data_get($response->json(), 'error.code');
-            if ($errorCode === 'PHONE_VERIFICATION_REQUIRED') {
+            if ($errorCode === 'EMAIL_VERIFICATION_REQUIRED') {
                 return redirect()
-                    ->route('verification.phone')
+                    ->route('verification.email')
                     ->withInput($request->only('email'))
-                    ->withErrors(['verification' => 'Debes verificar tu teléfono antes de iniciar sesión.']);
+                    ->withErrors(['verification' => 'Debes verificar tu correo antes de iniciar sesión.']);
             }
 
             return back()
@@ -195,21 +195,23 @@ class AuthController extends Controller
         }
 
         return redirect()
-            ->route('verification.phone')
-            ->with('success', 'Cuenta creada. Ingresa el código enviado a tu teléfono.');
+            ->route('verification.email')
+            ->with('success', $this->verificationIssuedMessage($response->json('data.verification')));
     }
 
-    public function showPhoneVerification(Request $request): View
+    public function showEmailOtpVerification(Request $request): View
     {
-        return view('auth.verify-phone', [
+        return view('auth.verify-email', [
             'hasChallenge' => $request->session()->has('registration_verification_token'),
             'maskedDestination' => $request->session()->get('registration_masked_destination'),
             'otpExpiresAt' => $request->session()->get('registration_otp_expires_at'),
             'resendAvailableAt' => $request->session()->get('registration_resend_available_at'),
+            'deliveryMode' => $request->session()->get('registration_delivery_mode'),
+            'deliveryConfirmed' => $request->session()->get('registration_delivery_confirmed', false),
         ]);
     }
 
-    public function requestPhoneVerification(Request $request): RedirectResponse
+    public function requestEmailVerification(Request $request): RedirectResponse
     {
         $request->validate([
             'email' => ['required', 'email:rfc', 'max:254'],
@@ -240,15 +242,20 @@ class AuthController extends Controller
             return back()->withErrors(['verification' => 'El servicio respondió con un formato no reconocido.']);
         }
 
-        return redirect()->route('verification.phone')->with('success', 'Se envió un nuevo código de verificación.');
+        return redirect()
+            ->route('verification.email')
+            ->with('success', $this->verificationIssuedMessage($response->json('data')));
     }
 
-    public function verifyPhoneOtp(Request $request): RedirectResponse
+    public function verifyEmailOtp(Request $request): RedirectResponse
     {
+        if (! $request->filled('code') && is_array($request->input('code_digits'))) {
+            $request->merge(['code' => implode('', $request->input('code_digits'))]);
+        }
         $request->validate(['code' => ['required', 'digits:6']]);
         $token = $request->session()->get('registration_verification_token');
         if (! is_string($token) || $token === '') {
-            return redirect()->route('verification.phone')
+            return redirect()->route('verification.email')
                 ->withErrors(['verification' => 'La solicitud expiró. Inicia nuevamente la verificación.']);
         }
 
@@ -267,14 +274,14 @@ class AuthController extends Controller
 
         $this->forgetVerificationChallenge($request);
 
-        return redirect()->route('login')->with('success', 'Teléfono verificado. Ya puedes iniciar sesión.');
+        return redirect()->route('login')->with('success', 'Correo verificado. Ya puedes iniciar sesión.');
     }
 
-    public function resendPhoneOtp(Request $request): RedirectResponse
+    public function resendEmailOtp(Request $request): RedirectResponse
     {
         $token = $request->session()->get('registration_verification_token');
         if (! is_string($token) || $token === '') {
-            return redirect()->route('verification.phone')
+            return redirect()->route('verification.email')
                 ->withErrors(['verification' => 'La solicitud expiró. Inicia nuevamente la verificación.']);
         }
 
@@ -295,7 +302,7 @@ class AuthController extends Controller
             return back()->withErrors(['verification' => 'El servicio respondió con un formato no reconocido.']);
         }
 
-        return back()->with('success', 'Se emitió un nuevo código. El anterior dejó de ser válido.');
+        return back()->with('success', $this->verificationIssuedMessage($response->json('data')));
     }
 
     public function showForgotPassword(): View
@@ -336,13 +343,6 @@ class AuthController extends Controller
         ]);
     }
 
-    public function showEmailVerification(): View
-    {
-        return view('auth.verify-email', [
-            'verificationAvailable' => false,
-        ]);
-    }
-
     private function homeRouteForRole(string $role): string
     {
         return self::ROLE_HOME_ROUTES[$role] ?? 'login';
@@ -357,7 +357,7 @@ class AuthController extends Controller
             'ACCOUNT_DISABLED', 'PROFILE_DISABLED', 'ROLE_DISABLED', 'PROFILE_UNAVAILABLE' =>
                 'La cuenta no está habilitada. Contacta con la administración de la clínica.',
             'ROLE_NOT_ALLOWED' => 'La cuenta no tiene un rol autorizado para este sistema.',
-            'PHONE_VERIFICATION_REQUIRED' => 'Debes verificar tu teléfono antes de iniciar sesión.',
+            'EMAIL_VERIFICATION_REQUIRED' => 'Debes verificar tu correo antes de iniciar sesión.',
             default => $status >= 500
                 ? 'El servicio de acceso presentó un error. Intenta nuevamente.'
                 : 'No fue posible iniciar sesión con los datos proporcionados.',
@@ -369,7 +369,7 @@ class AuthController extends Controller
         return match ($code) {
             'EMAIL_ALREADY_REGISTERED' => 'El correo ya está registrado.',
             'DOCUMENT_ALREADY_REGISTERED' => 'El documento ya está registrado.',
-            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED' =>
+            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' =>
                 'La cuenta no pudo crearse porque la entrega OTP no está disponible. Intenta nuevamente más tarde.',
             'VALIDATION_ERROR' => 'Revisa los datos ingresados e intenta nuevamente.',
             default => $status >= 500
@@ -388,8 +388,9 @@ class AuthController extends Controller
                 'Se alcanzó el límite temporal de solicitudes. Intenta más tarde.',
             'INVALID_VERIFICATION_CHALLENGE' => 'La solicitud expiró. Inicia nuevamente la verificación.',
             'INVALID_VERIFICATION_CREDENTIALS' => 'No fue posible iniciar la verificación con esos datos.',
-            'PHONE_ALREADY_VERIFIED' => 'El teléfono ya fue verificado. Puedes iniciar sesión.',
-            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED' => 'La entrega del código no está disponible.',
+            'EMAIL_ALREADY_VERIFIED' => 'El correo ya fue verificado. Puedes iniciar sesión.',
+            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' =>
+                'La entrega del código por correo no está disponible.',
             default => $status >= 500
                 ? 'El servicio de verificación presentó un error. Intenta nuevamente.'
                 : 'No fue posible procesar la verificación.',
@@ -408,6 +409,8 @@ class AuthController extends Controller
             'registration_otp_expires_at' => data_get($data, 'otpExpiresAt'),
             'registration_resend_available_at' => data_get($data, 'resendAvailableAt'),
             'registration_verification_expires_at' => data_get($data, 'verificationExpiresAt'),
+            'registration_delivery_mode' => data_get($data, 'deliveryMode'),
+            'registration_delivery_confirmed' => data_get($data, 'deliveryConfirmed') === true,
         ]);
 
         return true;
@@ -421,6 +424,19 @@ class AuthController extends Controller
             'registration_otp_expires_at',
             'registration_resend_available_at',
             'registration_verification_expires_at',
+            'registration_delivery_mode',
+            'registration_delivery_confirmed',
         ]);
+    }
+
+    private function verificationIssuedMessage(mixed $data): string
+    {
+        if (strtoupper((string) data_get($data, 'deliveryMode')) === 'DEMO') {
+            return 'Código DEMO generado localmente. No se envió ningún correo real.';
+        }
+
+        return data_get($data, 'deliveryConfirmed') === true
+            ? 'Correo de verificación entregado al proveedor SMTP.'
+            : 'Código de verificación generado.';
     }
 }

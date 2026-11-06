@@ -74,6 +74,21 @@ public class CitaFunctionRepository {
                 .getSingleResult();
     }
 
+    /** Genera el OTP de verificacion de correo y lo devuelve una sola vez al backend. */
+    public String crearOtpEmail(String codUsu) {
+        return (String) consulta("SELECT public.crear_otp_email(CAST(:codUsu AS text))")
+                .setParameter("codUsu", codUsu, String.class)
+                .getSingleResult();
+    }
+
+    /** Valida el OTP de correo y marca email_verificado sin reutilizar telefono_verificado. */
+    public Boolean validarOtpEmail(String codUsu, String codigo) {
+        return (Boolean) consulta("SELECT public.validar_otp_email(CAST(:codUsu AS text), CAST(:codigo AS text))")
+                .setParameter("codUsu", codUsu, String.class)
+                .setParameter("codigo", codigo, String.class)
+                .getSingleResult();
+    }
+
     /** RF-03: devuelve el token de recuperación en claro, o {@code null} si el email no existe (respuesta neutra). */
     public String crearTokenRecuperacion(String email) {
         return (String) consulta("SELECT public.crear_token_recuperacion(CAST(:email AS text))")

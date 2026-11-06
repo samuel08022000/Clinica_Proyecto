@@ -78,18 +78,18 @@ class AuthFlowTest extends TestCase
             ->assertSessionMissing('auth_token');
     }
 
-    public function test_pending_patient_is_redirected_to_phone_verification_message(): void
+    public function test_pending_patient_is_redirected_to_email_verification_message(): void
     {
         Http::fake([
             '*/auth/login' => Http::response([
-                'error' => ['code' => 'PHONE_VERIFICATION_REQUIRED', 'message' => 'Backend'],
+                'error' => ['code' => 'EMAIL_VERIFICATION_REQUIRED', 'message' => 'Backend'],
             ], 403),
         ]);
 
         $this->from(route('login'))->post(route('login.attempt'), [
             'email' => 'pendiente@clinica.bo',
             'password' => 'PacienteSegura123',
-        ])->assertRedirect(route('verification.phone'))
+        ])->assertRedirect(route('verification.email'))
             ->assertSessionHasErrors('verification')
             ->assertSessionMissing('auth_token');
     }

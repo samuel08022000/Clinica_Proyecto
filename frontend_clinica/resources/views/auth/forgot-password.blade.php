@@ -14,7 +14,7 @@
             <a class="back-link" href="{{ route('login') }}">Volver al acceso</a>
             <header class="form-heading">
                 <h1 id="recovery-title">Recupera tu contraseña</h1>
-                <p>El flujo enviará un enlace temporal al correo registrado. No corresponde al OTP telefónico.</p>
+                <p>El flujo enviará un enlace temporal al correo registrado. No corresponde al OTP de registro.</p>
             </header>
 
             @include('layouts.alerts')

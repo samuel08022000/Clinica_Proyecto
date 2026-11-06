@@ -227,6 +227,112 @@ if (multistepForm) {
     });
 }
 
+document.querySelectorAll('[data-otp-form]').forEach((form) => {
+    const digits = [...form.querySelectorAll('[data-otp-digit]')];
+    const combined = form.querySelector('[data-otp-combined]');
+    const submitButton = form.querySelector('[data-submit-button]');
+
+    if (digits.length !== 6 || !combined || !submitButton) {
+        return;
+    }
+
+    const updateOtp = () => {
+        const code = digits.map((input) => input.value).join('');
+        const complete = /^[0-9]{6}$/.test(code);
+        combined.value = complete ? code : '';
+        submitButton.disabled = !complete || form.dataset.otpExpired === 'true';
+    };
+
+    const distribute = (value, startIndex = 0) => {
+        const numeric = value.replace(/\D/g, '').slice(0, digits.length - startIndex);
+        numeric.split('').forEach((number, offset) => {
+            digits[startIndex + offset].value = number;
+        });
+        updateOtp();
+        const nextIndex = Math.min(startIndex + numeric.length, digits.length - 1);
+        digits[nextIndex]?.focus();
+        digits[nextIndex]?.select();
+    };
+
+    digits.forEach((digit, index) => {
+        digit.addEventListener('input', () => {
+            const numeric = digit.value.replace(/\D/g, '');
+            if (numeric.length > 1) {
+                digit.value = '';
+                distribute(numeric, index);
+                return;
+            }
+            digit.value = numeric;
+            updateOtp();
+            if (numeric && index < digits.length - 1) {
+                digits[index + 1].focus();
+                digits[index + 1].select();
+            }
+        });
+
+        digit.addEventListener('keydown', (event) => {
+            if (event.key === 'Backspace' && !digit.value && index > 0) {
+                event.preventDefault();
+                digits[index - 1].value = '';
+                digits[index - 1].focus();
+                updateOtp();
+            } else if (event.key === 'ArrowLeft' && index > 0) {
+                event.preventDefault();
+                digits[index - 1].focus();
+                digits[index - 1].select();
+            } else if (event.key === 'ArrowRight' && index < digits.length - 1) {
+                event.preventDefault();
+                digits[index + 1].focus();
+                digits[index + 1].select();
+            }
+        });
+
+        digit.addEventListener('paste', (event) => {
+            event.preventDefault();
+            distribute(event.clipboardData?.getData('text') ?? '', index);
+        });
+    });
+
+    form.addEventListener('submit', updateOtp);
+    updateOtp();
+});
+
+document.querySelectorAll('[data-otp-expiry]').forEach((status) => {
+    const expiresAt = Date.parse(status.dataset.expiresAt ?? '');
+    const form = status.closest('form');
+    const submitButton = form?.querySelector('[data-submit-button]');
+
+    if (Number.isNaN(expiresAt)) {
+        return;
+    }
+
+    let timer = null;
+    const updateExpiry = () => {
+        const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+        if (remaining === 0) {
+            status.textContent = 'El código venció. Solicita uno nuevo.';
+            if (form) {
+                form.dataset.otpExpired = 'true';
+            }
+            if (submitButton) {
+                submitButton.disabled = true;
+            }
+            if (timer !== null) {
+                window.clearInterval(timer);
+            }
+            return;
+        }
+        const minutes = Math.floor(remaining / 60);
+        const seconds = String(remaining % 60).padStart(2, '0');
+        status.textContent = `El código vence en ${minutes}:${seconds}.`;
+    };
+
+    updateExpiry();
+    if (expiresAt > Date.now()) {
+        timer = window.setInterval(updateExpiry, 1000);
+    }
+});
+
 document.querySelectorAll('[data-resend-form]').forEach((form) => {
     const button = form.querySelector('[data-resend-button]');
     const status = form.querySelector('[data-resend-status]');

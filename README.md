@@ -139,12 +139,14 @@ persistirla. Si Quarkus se inició deliberadamente en otro puerto local, indíca
 
 ---
 
-## 📱 Registro de pacientes y OTP telefónico (Fase 2B)
+## 📧 Registro de pacientes y OTP por correo (Fase 2B)
 
-V1 ya contiene las tablas y funciones necesarias para registro y OTP. La Fase 2B
-no agrega migraciones: reutiliza `registrar_paciente`, `crear_otp` y `validar_otp`.
-La cuenta se considera pendiente mientras `pacientes.telefono_verificado=false` y
-Quarkus rechaza su login hasta completar la verificación.
+El registro conserva `registrar_paciente` y añade una verificación de correo independiente
+de `telefono_verificado`. La migración repetible
+`R__verificacion_email_otp.sql` incorpora `email_verificado`, `email_verificado_en`,
+`crear_otp_email` y `validar_otp_email`. Se eligió una migración repetible para no
+ocupar ni bloquear la V3 local de credenciales demo. Los pacientes ya existentes se
+marcan como verificados al incorporar la columna; los nuevos comienzan pendientes.
 
 Para desarrollo local, configure en `backend_clinica/.env`:
 
@@ -158,21 +160,22 @@ Para probar el proveedor DEMO use la opción A (Quarkus ejecutado directamente e
 máquina local). El perfil `fullstack` no publica la clave DEMO dentro del contenedor
 ni relaja la restricción de acceso loopback.
 El proveedor DEMO solo funciona con el perfil Quarkus `dev` o `test`, desde loopback,
-y conserva temporalmente el código en memoria. Para leer el código después de enviar
+y conserva temporalmente el código en memoria. La interfaz indica expresamente que no
+se envió un correo real. Para leer el código después de enviar
 el formulario de registro:
 
 ```powershell
 ./backend_clinica/scripts/dev/read-demo-otp.ps1
 ```
 
-El script solicita el teléfono y la clave de acceso sin guardar esta última. El código
+El script solicita el correo y la clave de acceso sin guardar esta última. El código
 se muestra únicamente en esa consola local. Nunca redirija su salida a un archivo o log.
 
 Flujo para probarlo:
 
 1. Inicie PostgreSQL autorizado, Quarkus en `8080` y Laravel en `8000`.
 2. Abra `http://127.0.0.1:8000/registro` y cree un paciente ficticio.
-3. Consulte el OTP con el script local e ingréselo en `/verificar-telefono`.
+3. Consulte el OTP con el script local e ingréselo en `/verificar-correo`.
 4. Confirme que el login se rechaza antes de verificar y funciona después.
 
 Controles implementados: BCrypt costo 12, OTP SHA-256 de seis dígitos, vigencia de
@@ -181,8 +184,10 @@ emisiones por hora, invalidación del código previo y bloqueo de reutilización
 `FOR UPDATE` en PostgreSQL. El teléfono no es único porque el esquema permite que más
 de un paciente comparta un número; correo y CI sí tienen índices únicos.
 
-En producción mantenga `OTP_DELIVERY_PROVIDER=disabled` hasta implementar y autorizar
-un proveedor SMS real. No presente el modo DEMO como entrega SMS.
+El proveedor SMTP con Gmail ya está preparado, pero permanece inactivo hasta configurar
+credenciales válidas exclusivamente en `backend_clinica/.env`. Consulte la guía
+[Configurar Gmail SMTP](backend_clinica/docs/gmail-smtp.md). Nunca use el modo DEMO en
+producción ni presente su código local como un correo enviado.
 
 ---
 

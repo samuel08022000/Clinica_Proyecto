@@ -163,14 +163,14 @@ public class PatientRegistrationService {
         PatientAccount account = gateway.findByUserId(challenge.codUsu())
                 .orElseThrow(() -> invalidChallenge());
         return new OtpStatusData(
-                account.phoneVerified(),
+                account.emailVerified(),
                 challenge.maskedDestination(),
                 OffsetDateTime.ofInstant(challenge.expiresAt(), ZoneOffset.UTC));
     }
 
     private OtpChallengeData issueAndDeliver(PatientAccount account) {
         requireEligiblePendingAccount(account);
-        String masked = maskPhone(account.phone());
+        String masked = maskEmail(account.email());
         RegistrationChallengeStore.IssuedChallenge issued = challenges.issue(account.userId(), masked);
         RegistrationChallengeStore.Challenge challenge = new RegistrationChallengeStore.Challenge(
                 account.userId(), masked, issued.expiresAt());
@@ -195,9 +195,9 @@ public class PatientRegistrationService {
         }
         Instant now = clock.instant();
         Instant otpExpiresAt = now.plus(OTP_TTL);
-        deliveryProvider.deliver(new OtpDeliveryProvider.OtpMessage(
+        OtpDeliveryProvider.DeliveryReceipt delivery = deliveryProvider.deliver(new OtpDeliveryProvider.OtpMessage(
                 verificationToken,
-                account.phone(),
+                account.email(),
                 code,
                 otpExpiresAt));
         return new OtpChallengeData(
@@ -205,7 +205,9 @@ public class PatientRegistrationService {
                 challenge.maskedDestination(),
                 OffsetDateTime.ofInstant(otpExpiresAt, ZoneOffset.UTC),
                 OffsetDateTime.ofInstant(now.plus(OTP_RESEND_DELAY), ZoneOffset.UTC),
-                OffsetDateTime.ofInstant(challenge.expiresAt(), ZoneOffset.UTC));
+                OffsetDateTime.ofInstant(challenge.expiresAt(), ZoneOffset.UTC),
+                delivery.mode(),
+                delivery.deliveryConfirmed());
     }
 
     private RegistrationChallengeStore.Challenge requireChallenge(String rawToken) {
@@ -218,8 +220,8 @@ public class PatientRegistrationService {
                 || !"Activo".equals(account.profileStatus())) {
             throw new AuthException(403, "ACCOUNT_NOT_ELIGIBLE", "La cuenta no esta habilitada para verificacion.");
         }
-        if (account.phoneVerified()) {
-            throw new AuthException(409, "PHONE_ALREADY_VERIFIED", "El telefono ya fue verificado.");
+        if (account.emailVerified()) {
+            throw new AuthException(409, "EMAIL_ALREADY_VERIFIED", "El correo ya fue verificado.");
         }
     }
 
@@ -290,10 +292,15 @@ public class PatientRegistrationService {
         return (international ? "+" : "") + digits;
     }
 
-    private static String maskPhone(String phone) {
-        String digits = phone == null ? "" : phone.replaceAll("[^0-9]", "");
-        String suffix = digits.length() <= 3 ? digits : digits.substring(digits.length() - 3);
-        return "*** *** " + suffix;
+    private static String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "***@***";
+        }
+        int separator = email.indexOf('@');
+        String local = email.substring(0, separator);
+        String domain = email.substring(separator + 1);
+        String visible = local.isEmpty() ? "*" : local.substring(0, 1);
+        return visible + "***@" + domain;
     }
 
     private static String trim(String value) {

@@ -8,7 +8,7 @@ if ($uri.Scheme -ne 'http' -or $uri.Host -notin @('127.0.0.1', 'localhost')) {
     throw 'La consulta DEMO solo se permite contra Quarkus local por HTTP.'
 }
 
-$destination = Read-Host 'Telefono registrado'
+$destination = Read-Host 'Correo registrado'
 $secureKey = Read-Host 'OTP_DEMO_ACCESS_KEY' -AsSecureString
 $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
 

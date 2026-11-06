@@ -14,16 +14,16 @@ Route::controller(AuthController::class)->group(function (): void {
     Route::get('/registro', 'showRegistration')->name('register');
     Route::post('/registro', 'register')->middleware('throttle:3,1')->name('register.store');
 
-    Route::get('/verificar-telefono', 'showPhoneVerification')->name('verification.phone');
-    Route::post('/verificar-telefono', 'verifyPhoneOtp')
+    Route::get('/verificar-correo', 'showEmailOtpVerification')->name('verification.email');
+    Route::post('/verificar-correo', 'verifyEmailOtp')
         ->middleware('throttle:5,1')
-        ->name('verification.phone.verify');
-    Route::post('/verificar-telefono/reenviar', 'resendPhoneOtp')
+        ->name('verification.email.verify');
+    Route::post('/verificar-correo/reenviar', 'resendEmailOtp')
         ->middleware('throttle:3,1')
-        ->name('verification.phone.resend');
-    Route::post('/verificar-telefono/solicitar', 'requestPhoneVerification')
+        ->name('verification.email.resend');
+    Route::post('/verificar-correo/solicitar', 'requestEmailVerification')
         ->middleware('throttle:5,1')
-        ->name('verification.phone.request');
+        ->name('verification.email.request');
 
     Route::get('/recuperar-contrasena', 'showForgotPassword')->name('password.request');
     Route::post('/recuperar-contrasena', 'requestPasswordReset')
@@ -35,7 +35,6 @@ Route::controller(AuthController::class)->group(function (): void {
         ->middleware('throttle:3,1')
         ->name('password.update');
 
-    Route::get('/verificar-correo', 'showEmailVerification')->name('verification.notice');
 });
 
 Route::controller(AuthController::class)->group(function (): void {

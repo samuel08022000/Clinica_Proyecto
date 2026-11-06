@@ -68,15 +68,19 @@ La contraseña se lee como `SecureString`, se entrega al proceso de prueba media
 una variable efímera y se elimina al finalizar. No la escriba en argumentos, `.env`,
 HTML, JavaScript ni registros.
 
-## Registro de pacientes y verificación OTP
+## Registro de pacientes y verificación OTP por correo
 
-No se requiere una migración adicional. El módulo reutiliza el esquema de V1:
+La migración repetible `R__verificacion_email_otp.sql` evita colisionar con la V3 local:
 
 - `public.registrar_paciente`: crea `usuarios` y `pacientes` atómicamente con `ROL001`.
-- `public.crear_otp`: genera seis dígitos con `gen_random_bytes`, guarda SHA-256,
+- `public.crear_otp_email`: genera seis dígitos con `gen_random_bytes`, guarda SHA-256,
   invalida el código anterior y aplica límites de 60 segundos y 5 solicitudes/hora.
-- `public.validar_otp`: bloquea la fila con `FOR UPDATE`, permite 3 intentos, consume
-  el código y marca `telefono_verificado=true`.
+- `public.validar_otp_email`: bloquea la fila con `FOR UPDATE`, permite 3 intentos,
+  consume el código y marca `email_verificado=true`.
+
+`telefono_verificado` no se reutiliza ni se elimina. La migración marca como verificados
+los pacientes existentes para conservar su acceso y deja `false` como valor por defecto
+para registros posteriores.
 
 Endpoints públicos, siempre con `Cache-Control: no-store`:
 
@@ -96,13 +100,15 @@ Ejemplo del contrato de registro, sin contraseñas ni códigos en la respuesta:
   "data": {
     "patientId": "PAC000000",
     "roleCode": "ROL001",
-    "phoneVerificationRequired": true,
+    "emailVerificationRequired": true,
     "verification": {
       "verificationToken": "<token-opaco>",
-      "maskedDestination": "*** *** 000",
+      "maskedDestination": "p***@example.test",
       "otpExpiresAt": "<fecha-ISO-8601>",
       "resendAvailableAt": "<fecha-ISO-8601>",
-      "verificationExpiresAt": "<fecha-ISO-8601>"
+      "verificationExpiresAt": "<fecha-ISO-8601>",
+      "deliveryMode": "DEMO",
+      "deliveryConfirmed": false
     }
   }
 }
@@ -125,8 +131,9 @@ consúltelo desde la raíz del repositorio:
 ```
 
 El endpoint DEMO se niega en perfil de producción, fuera de loopback o con una clave
-incorrecta. No registra códigos. Para producción, deje el proveedor en `disabled`
-hasta implementar `OtpDeliveryProvider` con un gateway SMS autorizado.
+incorrecta. No registra códigos. El modo `smtp` usa Quarkus Mailer y solo confirma la
+entrega si la llamada síncrona al proveedor termina correctamente. La configuración
+paso a paso para Gmail está en [docs/gmail-smtp.md](docs/gmail-smtp.md).
 
 Los desafíos opacos son locales al proceso, igual que las sesiones actuales. Reiniciar
 Quarkus los revoca; el paciente puede retomar el proceso con correo y contraseña. Antes

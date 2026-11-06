@@ -45,13 +45,13 @@ class PortalFrontendTest extends TestCase
         $this->get(route('register'))
             ->assertOk()
             ->assertSee('Crea tu cuenta de paciente')
-            ->assertSee('Verificación telefónica')
-            ->assertSee('Crear cuenta y enviar código')
+            ->assertSee('Verificación por correo')
+            ->assertSee('Crear cuenta y emitir código')
             ->assertSee('name="_token"', false);
 
-        $this->get(route('verification.phone'))
+        $this->get(route('verification.email'))
             ->assertOk()
-            ->assertSee('Confirma tu teléfono')
+            ->assertSee('Confirma tu correo')
             ->assertSee('Solicitar código')
             ->assertSee('name="_token"', false);
 
@@ -60,10 +60,6 @@ class PortalFrontendTest extends TestCase
             ->assertSee('Recupera tu contraseña')
             ->assertSee('Servicio pendiente.');
 
-        $this->get(route('verification.notice'))
-            ->assertOk()
-            ->assertSee('Confirma tu correo')
-            ->assertSee('No iniciado · backend pendiente');
     }
 
     public function test_registration_requires_the_database_fields_before_backend_handoff(): void

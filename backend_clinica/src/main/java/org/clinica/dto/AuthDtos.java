@@ -62,13 +62,15 @@ public final class AuthDtos {
             String maskedDestination,
             OffsetDateTime otpExpiresAt,
             OffsetDateTime resendAvailableAt,
-            OffsetDateTime verificationExpiresAt) {
+            OffsetDateTime verificationExpiresAt,
+            String deliveryMode,
+            boolean deliveryConfirmed) {
     }
 
     public record RegistrationData(
             String patientId,
             String roleCode,
-            boolean phoneVerificationRequired,
+            boolean emailVerificationRequired,
             OtpChallengeData verification) {
     }
 

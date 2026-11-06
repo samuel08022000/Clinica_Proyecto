@@ -16,10 +16,10 @@
         <div class="registration-layout">
             <aside class="registration-intro">
                 <h1>Crea tu cuenta de paciente</h1>
-                <p>Completa tus datos y confirma tu teléfono antes de iniciar sesión. La contraseña y el código nunca se guardan en el navegador.</p>
+                <p>Completa tus datos y confirma tu correo antes de iniciar sesión. La contraseña y el código nunca se guardan en el navegador.</p>
                 <div class="registration-fact">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7v5c0 5 3.4 8.2 8 9 4.6-.8 8-4 8-9V7l-8-4Z" /><path d="m9 12 2 2 4-5" /></svg>
-                    <p>La verificación telefónica usa un OTP independiente del correo y del acceso con Google.</p>
+                    <p>El correo se verifica con un OTP independiente del acceso con Google.</p>
                 </div>
             </aside>
 
@@ -112,7 +112,7 @@
                     </fieldset>
 
                     <fieldset class="form-step" data-step-panel hidden>
-                        <legend>Verificación telefónica</legend>
+                        <legend>Verificación por correo</legend>
                         <p class="form-step__intro">Al confirmar, Quarkus creará el usuario y el perfil paciente en una sola transacción y emitirá un código de seis dígitos.</p>
 
                         <div class="otp-status" role="status">
@@ -121,14 +121,14 @@
                         </div>
 
                         <div class="verification-states">
-                            <p><strong>Teléfono:</strong> deberás validarlo antes de iniciar sesión.</p>
+                            <p><strong>Correo:</strong> deberás validarlo antes de iniciar sesión.</p>
                             <p><strong>Privacidad:</strong> el código se almacena únicamente como hash y se invalida al usarlo o reenviarlo.</p>
                         </div>
 
                         <div class="step-actions">
                             <button class="button button--secondary" type="button" data-step-back>Volver</button>
                             <button class="button button--primary" type="submit" data-submit-button data-loading-label="Creando cuenta…">
-                                <span data-button-label>Crear cuenta y enviar código</span>
+                                <span data-button-label>Crear cuenta y emitir código</span>
                             </button>
                         </div>
                     </fieldset>

@@ -1444,6 +1444,39 @@ p {
     text-align: center;
 }
 
+.otp-fields input:focus-visible {
+    border-color: var(--accent-strong);
+    outline: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    outline-offset: 2px;
+}
+
+.delivery-notice {
+    display: grid;
+    gap: 0.25rem;
+    margin: 1rem 0;
+    padding: 1rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.delivery-notice--demo {
+    background: #e2eff0;
+    color: var(--ink);
+}
+
+.delivery-notice strong,
+.delivery-notice p {
+    font-size: var(--step-small);
+}
+
+.otp-expiry {
+    min-height: 1.5rem;
+    margin: 0.75rem 0;
+    color: var(--muted);
+    font-size: var(--step-small);
+    font-variant-numeric: tabular-nums;
+}
+
 .verification-states {
     display: grid;
     gap: 0.5rem;

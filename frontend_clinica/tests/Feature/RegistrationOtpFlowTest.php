@@ -39,15 +39,17 @@ class RegistrationOtpFlowTest extends TestCase
             '*/auth/register' => Http::response(['data' => [
                 'patientId' => 'PAC000100',
                 'roleCode' => 'ROL001',
-                'phoneVerificationRequired' => true,
+                'emailVerificationRequired' => true,
                 'verification' => $this->challengeData(),
             ]], 201),
         ]);
 
         $this->post(route('register.store'), $this->registrationData())
-            ->assertRedirect(route('verification.phone'))
+            ->assertRedirect(route('verification.email'))
             ->assertSessionHas('registration_verification_token', 'opaque-verification-token')
-            ->assertSessionHas('registration_masked_destination', '*** *** 678')
+            ->assertSessionHas('registration_masked_destination', 'n***@clinica.bo')
+            ->assertSessionHas('registration_delivery_mode', 'DEMO')
+            ->assertSessionHas('registration_delivery_confirmed', false)
             ->assertSessionMissing('password');
 
         Http::assertSent(fn (Request $request): bool =>
@@ -113,7 +115,7 @@ class RegistrationOtpFlowTest extends TestCase
             ->assertSessionHasInput('ci', 'CI-9001');
     }
 
-    public function test_phone_verification_success_clears_challenge_and_redirects_to_login(): void
+    public function test_email_verification_success_joins_the_six_digits_and_redirects_to_login(): void
     {
         Http::fake([
             '*/auth/otp/verify' => Http::response([
@@ -122,7 +124,9 @@ class RegistrationOtpFlowTest extends TestCase
         ]);
 
         $this->withSession($this->verificationSession())
-            ->post(route('verification.phone.verify'), ['code' => '123456'])
+            ->post(route('verification.email.verify'), [
+                'code_digits' => ['1', '2', '3', '4', '5', '6'],
+            ])
             ->assertRedirect(route('login'))
             ->assertSessionMissing('registration_verification_token')
             ->assertSessionHas('success');
@@ -142,9 +146,9 @@ class RegistrationOtpFlowTest extends TestCase
         ]);
 
         $this->withSession($this->verificationSession())
-            ->from(route('verification.phone'))
-            ->post(route('verification.phone.verify'), ['code' => '000000'])
-            ->assertRedirect(route('verification.phone'))
+            ->from(route('verification.email'))
+            ->post(route('verification.email.verify'), ['code' => '000000'])
+            ->assertRedirect(route('verification.email'))
             ->assertSessionHasErrors('verification')
             ->assertSessionHas('registration_verification_token', 'opaque-verification-token');
     }
@@ -154,7 +158,7 @@ class RegistrationOtpFlowTest extends TestCase
         Http::fake(fn () => throw new ConnectionException('Quarkus no disponible'));
 
         $this->withSession($this->verificationSession())
-            ->post(route('verification.phone.verify'), ['code' => '123456'])
+            ->post(route('verification.email.verify'), ['code' => '123456'])
             ->assertSessionHasErrors('verification')
             ->assertSessionHas('registration_verification_token', 'opaque-verification-token');
     }
@@ -168,7 +172,7 @@ class RegistrationOtpFlowTest extends TestCase
         ]);
 
         $this->withSession($this->verificationSession())
-            ->post(route('verification.phone.resend'))
+            ->post(route('verification.email.resend'))
             ->assertRedirect()
             ->assertSessionHas('registration_otp_expires_at', '2026-11-04T12:10:00Z')
             ->assertSessionHas('success');
@@ -185,7 +189,7 @@ class RegistrationOtpFlowTest extends TestCase
         ]);
 
         $this->withSession($this->verificationSession())
-            ->post(route('verification.phone.resend'))
+            ->post(route('verification.email.resend'))
             ->assertSessionHasErrors('verification')
             ->assertSessionHas('registration_verification_token', 'opaque-verification-token');
     }
@@ -196,19 +200,21 @@ class RegistrationOtpFlowTest extends TestCase
             '*/auth/otp/request' => Http::response(['data' => $this->challengeData()], 202),
         ]);
 
-        $this->post(route('verification.phone.request'), [
+        $this->post(route('verification.email.request'), [
             'email' => 'nuevo@clinica.bo',
             'password' => 'PacienteSegura123',
-        ])->assertRedirect(route('verification.phone'))
+        ])->assertRedirect(route('verification.email'))
             ->assertSessionHas('registration_verification_token', 'opaque-verification-token');
     }
 
     public function test_verification_page_never_renders_an_otp_value(): void
     {
         $this->withSession($this->verificationSession())
-            ->get(route('verification.phone'))
+            ->get(route('verification.email'))
             ->assertOk()
-            ->assertSee('Confirma tu teléfono')
+            ->assertSee('Confirma tu correo')
+            ->assertSee('Modo DEMO local')
+            ->assertSee('No se envió un correo real')
             ->assertSee('name="_token"', false)
             ->assertDontSee('123456');
     }
@@ -231,10 +237,12 @@ class RegistrationOtpFlowTest extends TestCase
     {
         return [
             'verificationToken' => 'opaque-verification-token',
-            'maskedDestination' => '*** *** 678',
+            'maskedDestination' => 'n***@clinica.bo',
             'otpExpiresAt' => '2026-11-04T12:05:00Z',
             'resendAvailableAt' => '2026-11-04T12:01:00Z',
             'verificationExpiresAt' => '2026-11-04T12:30:00Z',
+            'deliveryMode' => 'DEMO',
+            'deliveryConfirmed' => false,
         ];
     }
 
@@ -242,10 +250,12 @@ class RegistrationOtpFlowTest extends TestCase
     {
         return [
             'registration_verification_token' => 'opaque-verification-token',
-            'registration_masked_destination' => '*** *** 678',
+            'registration_masked_destination' => 'n***@clinica.bo',
             'registration_otp_expires_at' => '2026-11-04T12:05:00Z',
             'registration_resend_available_at' => '2026-11-04T12:01:00Z',
             'registration_verification_expires_at' => '2026-11-04T12:30:00Z',
+            'registration_delivery_mode' => 'DEMO',
+            'registration_delivery_confirmed' => false,
         ];
     }
 }

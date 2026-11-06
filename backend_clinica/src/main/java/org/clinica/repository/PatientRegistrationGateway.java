@@ -61,12 +61,12 @@ public class PatientRegistrationGateway {
 
     @Transactional
     public String createOtp(String codUsu) {
-        return functions.crearOtp(codUsu);
+        return functions.crearOtpEmail(codUsu);
     }
 
     @Transactional
     public boolean verifyOtp(String codUsu, String code) {
-        return Boolean.TRUE.equals(functions.validarOtp(codUsu, code));
+        return Boolean.TRUE.equals(functions.validarOtpEmail(codUsu, code));
     }
 
     private Optional<PatientAccount> toPatientAccount(Usuario usuario) {
@@ -87,7 +87,7 @@ public class PatientRegistrationGateway {
                 usuario.estado,
                 paciente.estadoCuenta,
                 paciente.telefono,
-                Boolean.TRUE.equals(paciente.telefonoVerificado));
+                Boolean.TRUE.equals(paciente.emailVerificado));
     }
 
     public record PatientAccount(
@@ -100,6 +100,6 @@ public class PatientRegistrationGateway {
             String userStatus,
             String profileStatus,
             String phone,
-            boolean phoneVerified) {
+            boolean emailVerified) {
     }
 }

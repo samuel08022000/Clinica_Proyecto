@@ -99,7 +99,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void patientWithoutVerifiedPhoneCannotLogin() {
+    void patientWithoutVerifiedEmailCannotLogin() {
         gateway.put(account("USU000005", "pendiente@clinica.bo", "ROL001", "Paciente",
                 "Activo", "Activo", true, "Activo", null, false));
 
@@ -107,7 +107,7 @@ class AuthServiceTest {
                 () -> service.login("pendiente@clinica.bo", PASSWORD, "127.0.0.1"));
 
         assertEquals(403, error.status());
-        assertEquals("PHONE_VERIFICATION_REQUIRED", error.code());
+        assertEquals("EMAIL_VERIFICATION_REQUIRED", error.code());
     }
 
     @Test
@@ -202,7 +202,7 @@ class AuthServiceTest {
             boolean profilePresent,
             String profileStatus,
             OffsetDateTime blockedUntil,
-            boolean phoneVerified) {
+            boolean emailVerified) {
         return new AuthAccount(
                 id,
                 "Usuario de prueba",
@@ -215,7 +215,7 @@ class AuthServiceTest {
                 profilePresent,
                 profileStatus,
                 blockedUntil,
-                phoneVerified);
+                emailVerified);
     }
 
     private static final class FakeAccountGateway extends AuthAccountGateway {

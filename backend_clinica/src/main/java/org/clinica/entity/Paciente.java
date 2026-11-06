@@ -35,6 +35,12 @@ public class Paciente extends PanacheEntityBase {
     @Column(name = "telefono_verificado", nullable = false)
     public Boolean telefonoVerificado = false;
 
+    @Column(name = "email_verificado", nullable = false)
+    public Boolean emailVerificado = false;
+
+    @Column(name = "email_verificado_en")
+    public OffsetDateTime emailVerificadoEn;
+
     @Column(name = "ciudad_residencia", nullable = false, length = 100)
     public String ciudadResidencia;
 

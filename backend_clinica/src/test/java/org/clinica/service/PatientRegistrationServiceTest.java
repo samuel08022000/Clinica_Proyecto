@@ -55,11 +55,13 @@ class PatientRegistrationServiceTest {
 
         assertEquals("PAC000100", result.patientId());
         assertEquals("ROL001", result.roleCode());
-        assertTrue(result.phoneVerificationRequired());
+        assertTrue(result.emailVerificationRequired());
         assertNotNull(result.verification().verificationToken());
-        assertEquals("*** *** 678", result.verification().maskedDestination());
+        assertEquals("n***@clinica.bo", result.verification().maskedDestination());
+        assertEquals("DEMO", result.verification().deliveryMode());
+        assertFalse(result.verification().deliveryConfirmed());
         assertTrue(BcryptUtil.matches(PASSWORD, gateway.account.passwordHash()));
-        assertFalse(gateway.account.phoneVerified());
+        assertFalse(gateway.account.emailVerified());
         assertEquals("123456", delivery.lastCode);
     }
 
@@ -108,7 +110,7 @@ class PatientRegistrationServiceTest {
         OtpChallengeData challenge = service.register(validRequest()).verification();
 
         assertTrue(service.verify(challenge.verificationToken(), "123456").verified());
-        assertTrue(gateway.account.phoneVerified());
+        assertTrue(gateway.account.emailVerified());
 
         AuthException reused = assertThrows(AuthException.class,
                 () -> service.verify(challenge.verificationToken(), "123456"));
@@ -296,12 +298,13 @@ class PatientRegistrationServiceTest {
         private String lastCode;
 
         @Override
-        public void deliver(OtpMessage message) {
+        public DeliveryReceipt deliver(OtpMessage message) {
             lastToken = message.verificationToken();
             if (fail) {
                 throw new AuthException(503, "OTP_PROVIDER_UNAVAILABLE", "No disponible.");
             }
             lastCode = message.code();
+            return new DeliveryReceipt("DEMO", false);
         }
 
         @Override
