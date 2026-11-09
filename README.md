@@ -189,6 +189,35 @@ credenciales válidas exclusivamente en `backend_clinica/.env`. Consulte la guí
 [Configurar Gmail SMTP](backend_clinica/docs/gmail-smtp.md). Nunca use el modo DEMO en
 producción ni presente su código local como un correo enviado.
 
+## 🔐 Google Sign-In y recuperación de contraseña (Fase 2C)
+
+La V4 global agrega `usuarios_identidades_externas` y permite `password_hash` nulo solo
+para cuentas creadas exclusivamente con Google. Conserva V1, V2, la V3 demo local y la
+migración repetible de OTP. La identidad externa es única por proveedor y `sub`; nunca se
+guardan tokens de Google ni se vincula una cuenta solo porque coincida el correo.
+
+Google permanece deshabilitado hasta configurar credenciales locales. Consulte la guía
+[Configurar Google OAuth](backend_clinica/docs/google-oauth.md). El callback exacto es
+`http://127.0.0.1:8000/auth/google/callback`. Quarkus valida OIDC y sigue siendo la
+autoridad de roles y sesiones; el registro público con Google siempre asigna `ROL001`.
+
+La recuperación reutiliza `tokens_recuperacion` de V1 y el proveedor de correo de la
+Fase 2B. En modo DEMO, solicite el enlace desde `/recuperar-contrasena` y recupérelo solo
+en la consola local protegida:
+
+```powershell
+./backend_clinica/scripts/dev/read-demo-password-reset.ps1
+```
+
+Los enlaces vencen en 15 minutos, se almacenan como SHA-256, son de un solo uso y revocan
+todas las sesiones opacas del usuario al cambiar la contraseña. Una cuenta creada solo
+con Google puede establecer una credencial local únicamente mediante este enlace enviado
+a su correo validado; nunca se genera una contraseña predeterminada.
+
+En desarrollo, Flyway permite `outOfOrder` solo en el perfil `dev`: esto permite aplicar
+la V3 local después de una V4 global en clones nuevos. Producción mantiene el orden
+estricto y nunca carga `db/dev-migration`.
+
 ---
 
 ## 🛠️ 4. Guía de Trabajo para el Equipo: ¿Dónde pongo mi código?

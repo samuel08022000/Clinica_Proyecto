@@ -3,6 +3,7 @@ package org.clinica.service;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.clinica.dto.AuthDtos.DemoOtpData;
+import org.clinica.dto.AuthDtos.DemoPasswordResetData;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.Locale;
@@ -36,6 +37,27 @@ public class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
     }
 
     @Override
+    public DeliveryReceipt deliverPasswordReset(PasswordResetMessage message) {
+        return switch (provider) {
+            case "demo" -> demoProvider.deliverPasswordReset(message);
+            case "smtp" -> smtpProvider.deliverPasswordReset(message);
+            default -> throw unavailable();
+        };
+    }
+
+    public void requireAvailable() {
+        switch (provider) {
+            case "demo" -> demoProvider.requireAvailable();
+            case "smtp" -> smtpProvider.requireAvailable();
+            default -> throw unavailable();
+        }
+    }
+
+    public String mode() {
+        return provider.toUpperCase(Locale.ROOT);
+    }
+
+    @Override
     public void discard(String verificationToken) {
         if ("demo".equals(provider)) {
             demoProvider.discard(verificationToken);
@@ -57,6 +79,15 @@ public class ConfiguredOtpDeliveryProvider implements OtpDeliveryProvider {
             String remoteAddress) {
         return "demo".equals(provider)
                 ? demoProvider.readDemoCodeForDestination(destination, suppliedAccessKey, remoteAddress)
+                : Optional.empty();
+    }
+
+    public Optional<DemoPasswordResetData> readDemoPasswordReset(
+            String destination,
+            String suppliedAccessKey,
+            String remoteAddress) {
+        return "demo".equals(provider)
+                ? demoProvider.readPasswordReset(destination, suppliedAccessKey, remoteAddress)
                 : Optional.empty();
     }
 

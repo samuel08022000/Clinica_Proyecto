@@ -51,6 +51,69 @@ public final class AuthDtos {
     public record LoginData(UserResponse user, SessionResponse session) {
     }
 
+    public record GoogleAuthorizationRequest(
+            String state,
+            String nonce,
+            String codeChallenge,
+            String redirectUri) {
+    }
+
+    public record GoogleAuthorizationData(String authorizationUrl) {
+    }
+
+    public record GoogleCodeExchangeRequest(
+            String code,
+            String codeVerifier,
+            String nonce,
+            String redirectUri) {
+    }
+
+    public record GoogleExchangeData(
+            String status,
+            LoginData login,
+            String continuationToken,
+            OffsetDateTime continuationExpiresAt,
+            String suggestedName,
+            String email,
+            boolean emailVerified,
+            OtpChallengeData verification) {
+    }
+
+    public record GooglePatientRegistrationRequest(
+            String continuationToken,
+            String ci,
+            LocalDate fechaNacimiento,
+            String telefono,
+            String ciudadResidencia) {
+    }
+
+    public record GoogleLinkRequest(String continuationToken) {
+    }
+
+    public record GoogleLinkData(boolean linked) {
+    }
+
+    public record PasswordRecoveryRequest(String email) {
+    }
+
+    public record PasswordRecoveryData(String message) {
+    }
+
+    public record PasswordResetRequest(
+            String email,
+            String token,
+            String password) {
+    }
+
+    public record PasswordResetData(boolean reset, String nextAction) {
+    }
+
+    public record DemoPasswordResetRequest(String email) {
+    }
+
+    public record DemoPasswordResetData(String resetUrl, OffsetDateTime expiresAt) {
+    }
+
     public record MeData(UserResponse user, OffsetDateTime expiresAt) {
     }
 

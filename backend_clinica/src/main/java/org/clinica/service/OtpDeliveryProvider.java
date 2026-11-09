@@ -7,12 +7,20 @@ public interface OtpDeliveryProvider {
 
     DeliveryReceipt deliver(OtpMessage message);
 
+    DeliveryReceipt deliverPasswordReset(PasswordResetMessage message);
+
     void discard(String verificationToken);
 
     record OtpMessage(
             String verificationToken,
             String destination,
             String code,
+            Instant expiresAt) {
+    }
+
+    record PasswordResetMessage(
+            String destination,
+            String resetUrl,
             Instant expiresAt) {
     }
 

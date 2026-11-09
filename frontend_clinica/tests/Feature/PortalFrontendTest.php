@@ -58,7 +58,7 @@ class PortalFrontendTest extends TestCase
         $this->get(route('password.request'))
             ->assertOk()
             ->assertSee('Recupera tu contraseña')
-            ->assertSee('Servicio pendiente.');
+            ->assertSee('Por privacidad, la respuesta será la misma');
 
     }
 

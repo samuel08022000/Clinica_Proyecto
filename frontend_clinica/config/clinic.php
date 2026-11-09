@@ -34,11 +34,17 @@ return [
         'verify_otp' => env('QUARKUS_VERIFY_OTP_ENDPOINT', 'auth/otp/verify'),
         'resend_otp' => env('QUARKUS_RESEND_OTP_ENDPOINT', 'auth/otp/resend'),
         'otp_status' => env('QUARKUS_OTP_STATUS_ENDPOINT', 'auth/otp/status'),
-        'password_recovery' => env('QUARKUS_PASSWORD_RECOVERY_ENDPOINT'),
+        'google_authorization' => env('QUARKUS_GOOGLE_AUTHORIZATION_ENDPOINT', 'auth/google/authorization-url'),
+        'google_exchange' => env('QUARKUS_GOOGLE_EXCHANGE_ENDPOINT', 'auth/google/exchange'),
+        'google_register' => env('QUARKUS_GOOGLE_REGISTER_ENDPOINT', 'auth/google/register'),
+        'google_link' => env('QUARKUS_GOOGLE_LINK_ENDPOINT', 'auth/google/link'),
+        'password_forgot' => env('QUARKUS_PASSWORD_FORGOT_ENDPOINT', 'auth/password/forgot'),
+        'password_reset' => env('QUARKUS_PASSWORD_RESET_ENDPOINT', 'auth/password/reset'),
     ],
 
     'features' => [
         'google_oauth' => env('CLINIC_GOOGLE_OAUTH_ENABLED', false),
+        'google_redirect_uri' => env('GOOGLE_REDIRECT_URI', 'http://127.0.0.1:8000/auth/google/callback'),
         'email_verification' => env('CLINIC_EMAIL_VERIFICATION_ENABLED', false),
     ],
 

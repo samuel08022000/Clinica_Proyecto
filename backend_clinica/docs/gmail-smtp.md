@@ -1,6 +1,7 @@
-# Configurar Gmail SMTP para los OTP de registro
+# Configurar Gmail SMTP para OTP y recuperación
 
-El sistema inicia con `OTP_DELIVERY_PROVIDER=demo`. No cambie a SMTP hasta completar
+El mismo proveedor entrega los OTP de registro y los enlaces de recuperación. El sistema
+inicia con `OTP_DELIVERY_PROVIDER=demo`. No cambie a SMTP hasta completar
 todos los pasos y probar la cuenta remitente. Las credenciales se guardan únicamente
 en `backend_clinica/.env`, archivo ignorado por Git.
 
@@ -53,6 +54,8 @@ a TLS antes de autenticar.
 4. Confirme que Laravel muestra que el correo fue entregado al proveedor SMTP.
 5. Revise entrada, promociones y correo no deseado. Use el OTP recibido una sola vez.
 6. Confirme que el login se rechaza antes de validar y funciona después.
+7. Solicite una recuperación desde `/recuperar-contrasena` y compruebe que el enlace
+   recibido permite un único cambio, revoca las sesiones anteriores y exige volver a iniciar sesión.
 
 ## Si Gmail rechaza la autenticación
 

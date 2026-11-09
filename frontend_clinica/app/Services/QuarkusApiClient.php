@@ -66,6 +66,54 @@ class QuarkusApiClient
         );
     }
 
+    public function googleAuthorizationUrl(array $data): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.google_authorization') ?: 'auth/google/authorization-url'),
+            $data
+        );
+    }
+
+    public function exchangeGoogleCode(array $data): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.google_exchange') ?: 'auth/google/exchange'),
+            $data
+        );
+    }
+
+    public function registerGooglePatient(array $data): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.google_register') ?: 'auth/google/register'),
+            $data
+        );
+    }
+
+    public function linkGoogleAccount(string $continuationToken): Response
+    {
+        return $this->client()->post(
+            $this->url(config('clinic.endpoints.google_link') ?: 'auth/google/link'),
+            ['continuationToken' => $continuationToken]
+        );
+    }
+
+    public function requestPasswordReset(string $email): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.password_forgot') ?: 'auth/password/forgot'),
+            ['email' => $email]
+        );
+    }
+
+    public function resetPassword(string $email, string $token, string $password): Response
+    {
+        return $this->client(authenticated: false)->post(
+            $this->url(config('clinic.endpoints.password_reset') ?: 'auth/password/reset'),
+            ['email' => $email, 'token' => $token, 'password' => $password]
+        );
+    }
+
     public function requestOtp(string $email, string $password): Response
     {
         return $this->client(authenticated: false)->post(

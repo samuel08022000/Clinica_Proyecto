@@ -43,13 +43,7 @@ public class SmtpOtpDeliveryProvider implements OtpDeliveryProvider {
 
     @Override
     public DeliveryReceipt deliver(OtpMessage message) {
-        if (username.isBlank() || from.isBlank() || password.isBlank()
-                || (mock && LaunchMode.current() != LaunchMode.TEST)) {
-            throw new AuthException(
-                    503,
-                    "OTP_SMTP_NOT_CONFIGURED",
-                    "El proveedor SMTP no esta configurado para realizar envios reales.");
-        }
+        requireAvailable();
 
         String body = String.format(
                 "Hola,%n%nTu codigo de verificacion para completar el registro en la Clinica es: %s%n%n"
@@ -64,6 +58,35 @@ public class SmtpOtpDeliveryProvider implements OtpDeliveryProvider {
                     "No fue posible entregar el codigo de verificacion por correo.");
         }
         return new DeliveryReceipt("SMTP", true);
+    }
+
+    @Override
+    public DeliveryReceipt deliverPasswordReset(PasswordResetMessage message) {
+        requireAvailable();
+        String body = String.format(
+                "Hola,%n%nRecibimos una solicitud para cambiar tu contrasena de la Clinica.%n%n"
+                        + "Abre este enlace dentro de los proximos 15 minutos:%n%s%n%n"
+                        + "Si no hiciste la solicitud, ignora este mensaje.",
+                message.resetUrl());
+        try {
+            mailer.send(Mail.withText(message.destination(), "Recuperacion de contrasena - Clinica", body));
+        } catch (RuntimeException exception) {
+            throw new AuthException(
+                    503,
+                    "PASSWORD_RESET_DELIVERY_FAILED",
+                    "No fue posible entregar el correo de recuperacion.");
+        }
+        return new DeliveryReceipt("SMTP", true);
+    }
+
+    public void requireAvailable() {
+        if (username.isBlank() || from.isBlank() || password.isBlank()
+                || (mock && LaunchMode.current() != LaunchMode.TEST)) {
+            throw new AuthException(
+                    503,
+                    "OTP_SMTP_NOT_CONFIGURED",
+                    "El proveedor SMTP no esta configurado para realizar envios reales.");
+        }
     }
 
     @Override

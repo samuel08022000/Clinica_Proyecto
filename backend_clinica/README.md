@@ -139,6 +139,25 @@ Los desafíos opacos son locales al proceso, igual que las sesiones actuales. Re
 Quarkus los revoca; el paciente puede retomar el proceso con correo y contraseña. Antes
 de desplegar varias instancias se debe mover sesiones y desafíos a un almacén compartido.
 
+## Google OIDC y recuperación de contraseña
+
+La migración `V4__identidades_google.sql` crea la relación externa por `sub` y permite
+cuentas Google sin contraseña local. No almacena access tokens ni refresh tokens. Endpoints:
+
+| Método | Ruta | Uso |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/google/authorization-url` | URL oficial con `state`, `nonce` y PKCE |
+| `POST` | `/api/v1/auth/google/exchange` | Intercambia el código y valida el ID token |
+| `POST` | `/api/v1/auth/google/register` | Completa un paciente nuevo con `ROL001` |
+| `POST` | `/api/v1/auth/google/link` | Vincula tras sesión local autenticada |
+| `POST` | `/api/v1/auth/password/forgot` | Respuesta pública genérica y correo temporal |
+| `POST` | `/api/v1/auth/password/reset` | Cambia BCrypt, consume token y revoca sesiones |
+| `POST` | `/api/v1/auth/password/demo-link` | Solo DEMO, loopback y clave local |
+
+Google se activa siguiendo [docs/google-oauth.md](docs/google-oauth.md). Para recuperación
+DEMO use `scripts/dev/read-demo-password-reset.ps1`. SMTP reutiliza Quarkus Mailer y la
+misma configuración descrita en [docs/gmail-smtp.md](docs/gmail-smtp.md).
+
 > **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
 
 ## Packaging and running the application

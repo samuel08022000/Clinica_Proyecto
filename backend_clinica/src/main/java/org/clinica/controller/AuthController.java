@@ -15,6 +15,13 @@ import jakarta.ws.rs.core.Response;
 import org.clinica.dto.AuthDtos.DataResponse;
 import org.clinica.dto.AuthDtos.DemoOtpRequest;
 import org.clinica.dto.AuthDtos.LoginRequest;
+import org.clinica.dto.AuthDtos.GoogleAuthorizationRequest;
+import org.clinica.dto.AuthDtos.GoogleCodeExchangeRequest;
+import org.clinica.dto.AuthDtos.GoogleLinkRequest;
+import org.clinica.dto.AuthDtos.GooglePatientRegistrationRequest;
+import org.clinica.dto.AuthDtos.PasswordRecoveryRequest;
+import org.clinica.dto.AuthDtos.PasswordResetRequest;
+import org.clinica.dto.AuthDtos.DemoPasswordResetRequest;
 import org.clinica.dto.AuthDtos.LogoutData;
 import org.clinica.dto.AuthDtos.OtpRequest;
 import org.clinica.dto.AuthDtos.OtpResendRequest;
@@ -24,6 +31,8 @@ import org.clinica.service.ConfiguredOtpDeliveryProvider;
 import org.clinica.service.AuthService;
 import org.clinica.service.AuthException;
 import org.clinica.service.PatientRegistrationService;
+import org.clinica.service.GoogleAuthService;
+import org.clinica.service.PasswordRecoveryService;
 
 import java.util.Arrays;
 import java.util.Locale;
@@ -42,6 +51,12 @@ public class AuthController {
     PatientRegistrationService registrationService;
 
     @Inject
+    GoogleAuthService googleAuthService;
+
+    @Inject
+    PasswordRecoveryService passwordRecoveryService;
+
+    @Inject
     ConfiguredOtpDeliveryProvider otpDeliveryProvider;
 
     @Inject
@@ -54,6 +69,65 @@ public class AuthController {
         String password = request == null ? null : request.password();
         return noStore(Response.ok(new DataResponse<>(
                 authService.login(email, password, remoteAddress())))).build();
+    }
+
+    @POST
+    @Path("/google/authorization-url")
+    public Response googleAuthorizationUrl(GoogleAuthorizationRequest request) {
+        return noStore(Response.ok(new DataResponse<>(googleAuthService.authorizationUrl(request)))).build();
+    }
+
+    @POST
+    @Path("/google/exchange")
+    public Response googleExchange(GoogleCodeExchangeRequest request) {
+        return noStore(Response.ok(new DataResponse<>(googleAuthService.exchange(request)))).build();
+    }
+
+    @POST
+    @Path("/google/register")
+    public Response googleRegister(GooglePatientRegistrationRequest request) {
+        return noStore(Response.status(Response.Status.CREATED)
+                .entity(new DataResponse<>(googleAuthService.register(request))))
+                .build();
+    }
+
+    @POST
+    @Path("/google/link")
+    public Response googleLink(
+            GoogleLinkRequest request,
+            @HeaderParam("Authorization") String authorization) {
+        String continuation = request == null ? null : request.continuationToken();
+        return noStore(Response.ok(new DataResponse<>(
+                googleAuthService.link(bearerToken(authorization), continuation)))).build();
+    }
+
+    @POST
+    @Path("/password/forgot")
+    public Response forgotPassword(PasswordRecoveryRequest request) {
+        String email = request == null ? null : request.email();
+        return noStore(Response.accepted(new DataResponse<>(passwordRecoveryService.request(email)))).build();
+    }
+
+    @POST
+    @Path("/password/reset")
+    public Response resetPassword(PasswordResetRequest request) {
+        String email = request == null ? null : request.email();
+        String token = request == null ? null : request.token();
+        String password = request == null ? null : request.password();
+        return noStore(Response.ok(new DataResponse<>(
+                passwordRecoveryService.reset(email, token, password)))).build();
+    }
+
+    @POST
+    @Path("/password/demo-link")
+    public Response demoPasswordReset(
+            DemoPasswordResetRequest request,
+            @HeaderParam("X-Demo-Otp-Key") String accessKey) {
+        String email = request == null ? null : request.email();
+        return otpDeliveryProvider.readDemoPasswordReset(email, accessKey, remoteAddress())
+                .map(data -> noStore(Response.ok(new DataResponse<>(data))).build())
+                .orElseThrow(() -> new AuthException(404, "DEMO_RESET_NOT_AVAILABLE",
+                        "Enlace demo no disponible."));
     }
 
     @POST

@@ -25,7 +25,7 @@ public class Usuario extends PanacheEntityBase {
     @Column(name = "email", nullable = false, length = 254)
     public String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    @Column(name = "password_hash", length = 255)
     public String passwordHash;
 
     @Column(name = "cod_rol", nullable = false, length = 10)

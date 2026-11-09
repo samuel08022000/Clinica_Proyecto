@@ -101,11 +101,13 @@
                 </form>
 
                 <div class="oauth-separator"><span>Otra opción</span></div>
-                <button class="button button--google button--full" type="button" disabled aria-describedby="google-status">
+                <a class="button button--google button--full" href="{{ $googleEnabled ? route('google.login') : '#' }}" @unless($googleEnabled) aria-disabled="true" tabindex="-1" @endunless aria-describedby="google-status">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.2c0-.7-.1-1.4-.2-2H12v3.7h5a4.3 4.3 0 0 1-1.9 2.8v2.4h3.1c1.8-1.7 2.8-4.1 2.8-6.9Z" /><path d="M12 21c2.5 0 4.6-.8 6.2-2.2l-3.1-2.4c-.8.6-1.9.9-3.1.9a5.4 5.4 0 0 1-5.1-3.7H3.7V16A9.3 9.3 0 0 0 12 21Z" /><path d="M6.9 13.6a5.6 5.6 0 0 1 0-3.3V7.9H3.7a9 9 0 0 0 0 8.1l3.2-2.4Z" /><path d="M12 6.6c1.4 0 2.6.5 3.6 1.4l2.7-2.7A9 9 0 0 0 3.7 7.9l3.2 2.4A5.4 5.4 0 0 1 12 6.6Z" /></svg>
                     Continuar con Google
-                </button>
-                <p id="google-status" class="integration-note">OAuth/OpenID Connect requiere credenciales y endpoints propios. No está configurado.</p>
+                </a>
+                <p id="google-status" class="integration-note">
+                    {{ $googleEnabled ? 'Google validará tu identidad; la clínica mantendrá su propia sesión segura.' : 'Disponible cuando se configuren las credenciales OAuth locales.' }}
+                </p>
 
                 @if ($demoEnabled)
                     <section class="demo-access" aria-labelledby="demo-title">

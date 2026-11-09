@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import org.clinica.dto.AuthDtos.DemoOtpData;
+import org.clinica.dto.AuthDtos.DemoPasswordResetData;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
@@ -23,6 +24,7 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
 
     private final ConcurrentHashMap<String, DemoCode> demoCodes = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> destinationIndex = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, DemoReset> passwordResets = new ConcurrentHashMap<>();
     private final String demoAccessKey;
     private final boolean demoRuntimeAllowed;
 
@@ -39,12 +41,7 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
 
     @Override
     public DeliveryReceipt deliver(OtpMessage message) {
-        if (!demoRuntimeAllowed || demoAccessKey.length() < 24) {
-            throw new AuthException(
-                    503,
-                    "OTP_DEMO_NOT_ALLOWED",
-                    "El proveedor OTP de desarrollo no esta habilitado de forma segura.");
-        }
+        requireAvailable();
         purgeExpired();
         String tokenHash = RegistrationChallengeStore.hash(message.verificationToken());
         String destinationHash = RegistrationChallengeStore.hash(normalizeEmail(message.destination()));
@@ -56,6 +53,24 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
         }
         destinationIndex.put(destinationHash, tokenHash);
         return new DeliveryReceipt("DEMO", false);
+    }
+
+    @Override
+    public DeliveryReceipt deliverPasswordReset(PasswordResetMessage message) {
+        requireAvailable();
+        purgeExpired();
+        String destinationHash = RegistrationChallengeStore.hash(normalizeEmail(message.destination()));
+        passwordResets.put(destinationHash, new DemoReset(message.resetUrl(), message.expiresAt()));
+        return new DeliveryReceipt("DEMO", false);
+    }
+
+    public void requireAvailable() {
+        if (!demoRuntimeAllowed || demoAccessKey.length() < 24) {
+            throw new AuthException(
+                    503,
+                    "OTP_DEMO_NOT_ALLOWED",
+                    "El proveedor de correo de desarrollo no esta habilitado de forma segura.");
+        }
     }
 
     @Override
@@ -96,6 +111,27 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
         return tokenHash == null ? Optional.empty() : readByTokenHash(tokenHash);
     }
 
+    public Optional<DemoPasswordResetData> readPasswordReset(
+            String destination,
+            String suppliedAccessKey,
+            String remoteAddress) {
+        if (destination == null || destination.isBlank()
+                || !isDemoAccessAllowed(suppliedAccessKey, remoteAddress)) {
+            return Optional.empty();
+        }
+        String destinationHash = RegistrationChallengeStore.hash(normalizeEmail(destination));
+        DemoReset reset = passwordResets.get(destinationHash);
+        if (reset == null || !reset.expiresAt().isAfter(Instant.now())) {
+            if (reset != null) {
+                passwordResets.remove(destinationHash, reset);
+            }
+            return Optional.empty();
+        }
+        return Optional.of(new DemoPasswordResetData(
+                reset.resetUrl(),
+                OffsetDateTime.ofInstant(reset.expiresAt(), ZoneOffset.UTC)));
+    }
+
     private Optional<DemoOtpData> readByTokenHash(String tokenHash) {
         DemoCode demoCode = demoCodes.get(tokenHash);
         if (demoCode == null || !demoCode.expiresAt().isAfter(Instant.now())) {
@@ -124,6 +160,7 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
                 destinationIndex.remove(code.destinationHash(), tokenHash);
             }
         });
+        passwordResets.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
     }
 
     private static boolean isLoopback(String address) {
@@ -146,5 +183,8 @@ public class DemoOtpDeliveryProvider implements OtpDeliveryProvider {
     }
 
     private record DemoCode(String code, Instant expiresAt, String destinationHash) {
+    }
+
+    private record DemoReset(String resetUrl, Instant expiresAt) {
     }
 }

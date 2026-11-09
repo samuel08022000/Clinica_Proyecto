@@ -51,25 +51,36 @@ public class AuthService {
 
         attemptGuard.checkAllowed(normalizedEmail, remoteAddress);
         AuthAccount account = accountGateway.findByEmail(normalizedEmail).orElse(null);
-        String hashToCheck = account == null ? dummyHash : account.passwordHash();
-        boolean passwordMatches = BcryptUtil.matches(password, hashToCheck);
+        String hashToCheck = account == null || account.passwordHash() == null
+                ? dummyHash
+                : account.passwordHash();
+        boolean passwordMatches;
+        try {
+            passwordMatches = BcryptUtil.matches(password, hashToCheck);
+        } catch (RuntimeException ignored) {
+            passwordMatches = false;
+        }
 
-        if (account == null || !passwordMatches) {
+        if (account == null || account.passwordHash() == null || !passwordMatches) {
             attemptGuard.recordFailure(normalizedEmail, remoteAddress);
             throw new AuthException(401, "INVALID_CREDENTIALS", INVALID_CREDENTIALS);
         }
 
         validateAccount(account);
         attemptGuard.recordSuccess(normalizedEmail, remoteAddress);
-        sessionStore.revokeAllForUser(account.id());
-        AuthSessionStore.IssuedSession issued = sessionStore.issue(account.id());
+        return issueSession(account);
+    }
 
-        return new LoginData(
-                toUserResponse(account),
-                new SessionResponse(
-                        issued.rawToken(),
-                        "Bearer",
-                        OffsetDateTime.ofInstant(issued.expiresAt(), ZoneOffset.UTC)));
+    /** Emite la sesion interna solo despues de que un proveedor confiable valido la identidad. */
+    public LoginData loginTrustedUser(String userId) {
+        AuthAccount account = accountGateway.findById(userId)
+                .orElseThrow(() -> new AuthException(401, "ACCOUNT_NOT_FOUND", "La cuenta ya no esta disponible."));
+        validateAccount(account);
+        return issueSession(account);
+    }
+
+    public void revokeAllForUser(String userId) {
+        sessionStore.revokeAllForUser(userId);
     }
 
     public MeData me(String rawToken) {
@@ -102,6 +113,17 @@ public class AuthService {
     public boolean logout(String rawToken) {
         authenticatedSession(rawToken);
         return sessionStore.revoke(rawToken);
+    }
+
+    private LoginData issueSession(AuthAccount account) {
+        sessionStore.revokeAllForUser(account.id());
+        AuthSessionStore.IssuedSession issued = sessionStore.issue(account.id());
+        return new LoginData(
+                toUserResponse(account),
+                new SessionResponse(
+                        issued.rawToken(),
+                        "Bearer",
+                        OffsetDateTime.ofInstant(issued.expiresAt(), ZoneOffset.UTC)));
     }
 
     private AuthSessionStore.StoredSession authenticatedSession(String rawToken) {

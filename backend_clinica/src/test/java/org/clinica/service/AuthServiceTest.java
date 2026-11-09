@@ -74,6 +74,21 @@ class AuthServiceTest {
     }
 
     @Test
+    void googleOnlyAccountWithoutPasswordUsesTheSamePublicError() {
+        AuthAccount base = activeAccount("ROL001", "Paciente", "Activo", null);
+        gateway.put(new AuthAccount(
+                base.id(), base.name(), "google-only@clinica.bo", null,
+                base.roleCode(), base.roleName(), base.userStatus(), base.roleStatus(),
+                base.profilePresent(), base.profileStatus(), base.blockedUntil(), base.emailVerified()));
+
+        AuthException error = assertThrows(AuthException.class,
+                () -> service.login("google-only@clinica.bo", PASSWORD, "127.0.0.1"));
+
+        assertEquals(401, error.status());
+        assertEquals("INVALID_CREDENTIALS", error.code());
+    }
+
+    @Test
     void disabledUserIsRejected() {
         gateway.put(account("USU000002", "inactivo@clinica.bo", "ROL002", "Secretario",
                 "Inactivo", "Activo", true, "Activo", null));

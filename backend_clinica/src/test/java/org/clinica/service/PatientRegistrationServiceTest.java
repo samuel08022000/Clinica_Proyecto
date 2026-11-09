@@ -308,6 +308,11 @@ class PatientRegistrationServiceTest {
         }
 
         @Override
+        public DeliveryReceipt deliverPasswordReset(PasswordResetMessage message) {
+            return new DeliveryReceipt("DEMO", false);
+        }
+
+        @Override
         public void discard(String verificationToken) {
             if (verificationToken != null && verificationToken.equals(lastToken)) {
                 lastCode = null;

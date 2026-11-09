@@ -32,7 +32,7 @@ class AuthController extends Controller
             'backendAvailable' => true,
             'demoEnabled' => $isDemoEnvironment && config('clinic.demo.enabled'),
             'demoUsers' => $isDemoEnvironment ? config('clinic.demo.users', []) : [],
-            'googleEnabled' => false,
+            'googleEnabled' => (bool) config('clinic.features.google_oauth'),
         ]);
     }
 
@@ -83,22 +83,155 @@ class AuthController extends Controller
                 ->withErrors(['authentication' => 'El servicio respondió con un formato no reconocido. No se inició la sesión.']);
         }
 
-        $request->session()->regenerate();
-        $request->session()->put([
-            'auth_token' => $token,
-            'auth_expires_at' => data_get($payload, 'session.expiresAt'),
-            'cod_usu' => $codUsu,
-            'nombre_usuario' => data_get($payload, 'user.name'),
-            'email_usuario' => data_get($payload, 'user.email'),
-            'cod_rol' => $codRol,
-            'nombre_rol' => data_get($payload, 'user.role.name'),
-            'rol_slug' => data_get($payload, 'user.role.slug'),
-            'estado_cuenta' => data_get($payload, 'user.accountStatus'),
-        ]);
+        $this->establishSession($request, $payload);
+
+        $linkToken = $request->session()->pull('google_link_token');
+        if (is_string($linkToken) && $linkToken !== '' && $codRol === 'ROL001') {
+            try {
+                $linkResponse = $this->apiClient->linkGoogleAccount($linkToken);
+                if (! $linkResponse->successful()) {
+                    return redirect()->route(self::ROLE_HOME_ROUTES[$codRol])
+                        ->with('warning', 'La sesión se inició, pero no fue posible vincular la cuenta de Google.');
+                }
+            } catch (ConnectionException) {
+                return redirect()->route(self::ROLE_HOME_ROUTES[$codRol])
+                    ->with('warning', 'La sesión se inició, pero el servicio de vinculación no respondió.');
+            }
+        }
 
         return redirect()
             ->route(self::ROLE_HOME_ROUTES[$codRol])
             ->with('success', 'Sesión iniciada correctamente.');
+    }
+
+    public function redirectToGoogle(Request $request): RedirectResponse
+    {
+        return $this->beginGoogleFlow($request, 'login');
+    }
+
+    public function registerWithGoogle(Request $request): RedirectResponse
+    {
+        return $this->beginGoogleFlow($request, 'register');
+    }
+
+    public function handleGoogleCallback(Request $request): RedirectResponse
+    {
+        $flow = $request->session()->pull('google_oauth_flow');
+        if (! is_array($flow) || (int) ($flow['expires_at'] ?? 0) < time()) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'La solicitud con Google expiró. Inicia el proceso nuevamente.',
+            ]);
+        }
+        if ($request->filled('error')) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'El acceso con Google fue cancelado o rechazado.',
+            ]);
+        }
+        $state = $request->string('state')->toString();
+        if ($state === '' || ! hash_equals((string) ($flow['state'] ?? ''), $state)) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'No fue posible validar la seguridad de la respuesta de Google.',
+            ]);
+        }
+        if (! $request->filled('code')) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'Google no devolvió un código de autorización.',
+            ]);
+        }
+
+        try {
+            $response = $this->apiClient->exchangeGoogleCode([
+                'code' => $request->string('code')->toString(),
+                'codeVerifier' => (string) ($flow['code_verifier'] ?? ''),
+                'nonce' => (string) ($flow['nonce'] ?? ''),
+                'redirectUri' => (string) config('clinic.features.google_redirect_uri'),
+            ]);
+        } catch (ConnectionException) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'No pudimos conectar con el servicio de acceso con Google.',
+            ]);
+        }
+        if (! $response->successful()) {
+            return redirect()->route('login')->withErrors([
+                'authentication' => $this->googleErrorMessage((string) data_get($response->json(), 'error.code')),
+            ]);
+        }
+
+        $data = $response->json('data');
+        return match (data_get($data, 'status')) {
+            'AUTHENTICATED' => $this->finishGoogleLogin($request, data_get($data, 'login')),
+            'REGISTRATION_REQUIRED' => $this->continueGoogleRegistration($request, $data),
+            'LINK_REQUIRED' => $this->requireLocalLoginForGoogleLink($request, $data),
+            'EMAIL_VERIFICATION_REQUIRED' => $this->continueGoogleEmailVerification($request, $data),
+            default => redirect()->route('login')->withErrors([
+                'authentication' => 'El servicio respondió con un formato no reconocido.',
+            ]),
+        };
+    }
+
+    public function showGoogleRegistration(Request $request): View|RedirectResponse
+    {
+        if (! $request->session()->has('google_registration_token')) {
+            return redirect()->route('register')->withErrors([
+                'registration' => 'La continuación del registro con Google expiró.',
+            ]);
+        }
+        return view('auth.google-register', [
+            'googleName' => $request->session()->get('google_registration_name'),
+            'googleEmail' => $request->session()->get('google_registration_email'),
+        ]);
+    }
+
+    public function completeGoogleRegistration(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'ci' => ['required', 'string', 'min:4', 'max:30'],
+            'fecha_nacimiento' => ['required', 'date', 'before_or_equal:today'],
+            'telefono' => ['required', 'string', 'max:25', 'regex:/^\\+?[0-9 ()-]{8,25}$/'],
+            'ciudad_residencia' => ['required', 'string', 'min:3', 'max:100'],
+        ]);
+        $token = $request->session()->get('google_registration_token');
+        if (! is_string($token) || $token === '') {
+            return redirect()->route('register')->withErrors([
+                'registration' => 'La continuación del registro con Google expiró.',
+            ]);
+        }
+        try {
+            $response = $this->apiClient->registerGooglePatient([
+                'continuationToken' => $token,
+                'ci' => $request->string('ci')->trim()->toString(),
+                'fechaNacimiento' => $request->date('fecha_nacimiento')?->toDateString(),
+                'telefono' => $request->string('telefono')->trim()->toString(),
+                'ciudadResidencia' => $request->string('ciudad_residencia')->trim()->toString(),
+            ]);
+        } catch (ConnectionException) {
+            return back()->withInput()->withErrors([
+                'registration' => 'No pudimos conectar con el servicio de registro.',
+            ]);
+        }
+        if (! $response->successful()) {
+            return back()->withInput()->withErrors([
+                'registration' => $this->registrationErrorMessage(
+                    (string) data_get($response->json(), 'error.code'),
+                    $response->status(),
+                ),
+            ]);
+        }
+        $request->session()->forget([
+            'google_registration_token',
+            'google_registration_name',
+            'google_registration_email',
+        ]);
+        $data = $response->json('data');
+        if (data_get($data, 'status') === 'AUTHENTICATED') {
+            return $this->finishGoogleLogin($request, data_get($data, 'login'));
+        }
+        if (data_get($data, 'status') === 'EMAIL_VERIFICATION_REQUIRED') {
+            return $this->continueGoogleEmailVerification($request, $data);
+        }
+        return redirect()->route('login')->withErrors([
+            'authentication' => 'El servicio respondió con un formato no reconocido.',
+        ]);
     }
 
     public function logout(Request $request): RedirectResponse
@@ -143,6 +276,7 @@ class AuthController extends Controller
         return view('auth.register', [
             'registrationAvailable' => true,
             'otpAvailable' => true,
+            'googleEnabled' => (bool) config('clinic.features.google_oauth'),
         ]);
     }
 
@@ -307,26 +441,42 @@ class AuthController extends Controller
 
     public function showForgotPassword(): View
     {
-        return view('auth.forgot-password', ['recoveryAvailable' => false]);
+        return view('auth.forgot-password', ['recoveryAvailable' => true]);
     }
 
     public function requestPasswordReset(Request $request): RedirectResponse
     {
         $request->validate(['email' => ['required', 'email:rfc', 'max:254']]);
 
-        return back()
-            ->withInput($request->only('email'))
-            ->withErrors([
-                'recovery' => 'La API de recuperación todavía no está disponible. No se envió ningún correo.',
+        try {
+            $response = $this->apiClient->requestPasswordReset(
+                $request->string('email')->trim()->lower()->toString(),
+            );
+        } catch (ConnectionException) {
+            return back()->withInput($request->only('email'))->withErrors([
+                'recovery' => 'No pudimos conectar con el servicio de recuperación.',
             ]);
+        }
+        if (! $response->successful()) {
+            return back()->withInput($request->only('email'))->withErrors([
+                'recovery' => $response->status() === 429
+                    ? 'Espera antes de solicitar otro enlace de recuperación.'
+                    : 'El servicio de recuperación no está disponible. Intenta nuevamente.',
+            ]);
+        }
+        return back()->with('success', (string) data_get(
+            $response->json(),
+            'data.message',
+            'Si la cuenta es elegible, recibirás instrucciones para restablecer la contraseña.',
+        ));
     }
 
     public function showResetPassword(Request $request, ?string $token = null): View
     {
         return view('auth.reset-password', [
-            'token' => $token,
+            'token' => $token ?: $request->string('token')->toString(),
             'email' => $request->string('email')->toString(),
-            'resetAvailable' => false,
+            'resetAvailable' => true,
         ]);
     }
 
@@ -335,12 +485,154 @@ class AuthController extends Controller
         $request->validate([
             'email' => ['required', 'email:rfc', 'max:254'],
             'token' => ['required', 'string'],
-            'password' => ['required', 'confirmed', Password::min(10)->letters()->mixedCase()->numbers()],
+            'password' => ['required', 'confirmed', 'max:72', Password::min(10)->letters()->mixedCase()->numbers()],
         ]);
 
-        return back()->withErrors([
-            'reset' => 'El endpoint para restablecer la contraseña todavía no está disponible. La contraseña no fue modificada.',
+        try {
+            $response = $this->apiClient->resetPassword(
+                $request->string('email')->trim()->lower()->toString(),
+                $request->string('token')->toString(),
+                $request->string('password')->toString(),
+            );
+        } catch (ConnectionException) {
+            return back()->withInput($request->only(['email', 'token']))->withErrors([
+                'reset' => 'No pudimos conectar con el servicio de recuperación.',
+            ]);
+        }
+        if (! $response->successful()) {
+            return back()->withInput($request->only(['email', 'token']))->withErrors([
+                'reset' => 'El enlace no es válido, ya fue utilizado o expiró.',
+            ]);
+        }
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect()->route('login')->with('success',
+            'Contraseña actualizada. Inicia sesión nuevamente.');
+    }
+
+    private function beginGoogleFlow(Request $request, string $intent): RedirectResponse
+    {
+        if (! config('clinic.features.google_oauth')) {
+            return redirect()->route($intent === 'register' ? 'register' : 'login')->withErrors([
+                'authentication' => 'El acceso con Google todavía no está configurado.',
+            ]);
+        }
+        $state = $this->base64Url(random_bytes(32));
+        $nonce = $this->base64Url(random_bytes(32));
+        $verifier = $this->base64Url(random_bytes(64));
+        $challenge = $this->base64Url(hash('sha256', $verifier, true));
+        try {
+            $response = $this->apiClient->googleAuthorizationUrl([
+                'state' => $state,
+                'nonce' => $nonce,
+                'codeChallenge' => $challenge,
+                'redirectUri' => (string) config('clinic.features.google_redirect_uri'),
+            ]);
+        } catch (ConnectionException) {
+            return redirect()->route($intent === 'register' ? 'register' : 'login')->withErrors([
+                'authentication' => 'No pudimos conectar con el servicio de acceso con Google.',
+            ]);
+        }
+        $authorizationUrl = $response->json('data.authorizationUrl');
+        if (! $response->successful() || ! is_string($authorizationUrl)
+            || ! str_starts_with($authorizationUrl, 'https://accounts.google.com/')) {
+            return redirect()->route($intent === 'register' ? 'register' : 'login')->withErrors([
+                'authentication' => $this->googleErrorMessage((string) data_get($response->json(), 'error.code')),
+            ]);
+        }
+        $request->session()->put('google_oauth_flow', [
+            'state' => $state,
+            'nonce' => $nonce,
+            'code_verifier' => $verifier,
+            'intent' => $intent,
+            'expires_at' => time() + 600,
         ]);
+        return redirect()->away($authorizationUrl);
+    }
+
+    private function finishGoogleLogin(Request $request, mixed $payload): RedirectResponse
+    {
+        $codRol = data_get($payload, 'user.role.code');
+        $token = data_get($payload, 'session.accessToken');
+        if (! is_array($payload) || $codRol !== 'ROL001' || ! is_string($token) || $token === '') {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'El servicio respondió con un formato no reconocido.',
+            ]);
+        }
+        $this->establishSession($request, $payload);
+        return redirect()->route('paciente.home')->with('success', 'Sesión iniciada con Google.');
+    }
+
+    private function continueGoogleRegistration(Request $request, mixed $data): RedirectResponse
+    {
+        $token = data_get($data, 'continuationToken');
+        if (! is_string($token) || $token === '') {
+            return redirect()->route('register')->withErrors([
+                'registration' => 'La continuación del registro con Google no es válida.',
+            ]);
+        }
+        $request->session()->put([
+            'google_registration_token' => $token,
+            'google_registration_name' => data_get($data, 'suggestedName'),
+            'google_registration_email' => data_get($data, 'email'),
+        ]);
+        return redirect()->route('google.registration');
+    }
+
+    private function requireLocalLoginForGoogleLink(Request $request, mixed $data): RedirectResponse
+    {
+        $token = data_get($data, 'continuationToken');
+        if (! is_string($token) || $token === '') {
+            return redirect()->route('login')->withErrors([
+                'authentication' => 'No fue posible preparar la vinculación con Google.',
+            ]);
+        }
+        $request->session()->put('google_link_token', $token);
+        return redirect()->route('login')->with('warning',
+            'Ese correo ya tiene una cuenta. Inicia sesión con tu contraseña para confirmar la vinculación con Google.');
+    }
+
+    private function continueGoogleEmailVerification(Request $request, mixed $data): RedirectResponse
+    {
+        if (! $this->storeVerificationChallenge($request, data_get($data, 'verification'))) {
+            return redirect()->route('login')->withErrors([
+                'verification' => 'No fue posible iniciar la verificación del correo.',
+            ]);
+        }
+        return redirect()->route('verification.email')
+            ->with('success', $this->verificationIssuedMessage(data_get($data, 'verification')));
+    }
+
+    private function establishSession(Request $request, mixed $payload): void
+    {
+        $request->session()->regenerate();
+        $request->session()->put([
+            'auth_token' => data_get($payload, 'session.accessToken'),
+            'auth_expires_at' => data_get($payload, 'session.expiresAt'),
+            'cod_usu' => data_get($payload, 'user.id'),
+            'nombre_usuario' => data_get($payload, 'user.name'),
+            'email_usuario' => data_get($payload, 'user.email'),
+            'cod_rol' => data_get($payload, 'user.role.code'),
+            'nombre_rol' => data_get($payload, 'user.role.name'),
+            'rol_slug' => data_get($payload, 'user.role.slug'),
+            'estado_cuenta' => data_get($payload, 'user.accountStatus'),
+        ]);
+    }
+
+    private function googleErrorMessage(string $code): string
+    {
+        return match ($code) {
+            'GOOGLE_OAUTH_NOT_CONFIGURED' => 'El acceso con Google todavía no está configurado.',
+            'GOOGLE_AUTHENTICATION_FAILED', 'GOOGLE_ID_TOKEN_INVALID' =>
+                'Google no pudo validar la autorización. Inicia el proceso nuevamente.',
+            'GOOGLE_PROVIDER_UNAVAILABLE' => 'Google no está disponible temporalmente.',
+            default => 'No fue posible continuar con Google.',
+        };
+    }
+
+    private function base64Url(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 
     private function homeRouteForRole(string $role): string
@@ -369,6 +661,7 @@ class AuthController extends Controller
         return match ($code) {
             'EMAIL_ALREADY_REGISTERED' => 'El correo ya está registrado.',
             'DOCUMENT_ALREADY_REGISTERED' => 'El documento ya está registrado.',
+            'GOOGLE_ACCOUNT_CONFLICT' => 'No fue posible completar el registro con esa identidad de Google.',
             'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' =>
                 'La cuenta no pudo crearse porque la entrega OTP no está disponible. Intenta nuevamente más tarde.',
             'VALIDATION_ERROR' => 'Revisa los datos ingresados e intenta nuevamente.',

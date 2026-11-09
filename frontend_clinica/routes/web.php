@@ -13,6 +13,13 @@ Route::controller(AuthController::class)->group(function (): void {
 
     Route::get('/registro', 'showRegistration')->name('register');
     Route::post('/registro', 'register')->middleware('throttle:3,1')->name('register.store');
+    Route::get('/auth/google', 'redirectToGoogle')->middleware('throttle:10,1')->name('google.login');
+    Route::get('/registro/google', 'registerWithGoogle')->middleware('throttle:10,1')->name('google.register');
+    Route::get('/auth/google/callback', 'handleGoogleCallback')->name('google.callback');
+    Route::get('/registro/google/completar', 'showGoogleRegistration')->name('google.registration');
+    Route::post('/registro/google/completar', 'completeGoogleRegistration')
+        ->middleware('throttle:3,1')
+        ->name('google.registration.store');
 
     Route::get('/verificar-correo', 'showEmailOtpVerification')->name('verification.email');
     Route::post('/verificar-correo', 'verifyEmailOtp')

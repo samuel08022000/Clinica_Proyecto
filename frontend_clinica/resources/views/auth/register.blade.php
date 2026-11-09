@@ -37,6 +37,14 @@
 
                 @include('layouts.alerts')
 
+                <a class="button button--google button--full" href="{{ $googleEnabled ? route('google.register') : '#' }}" @unless($googleEnabled) aria-disabled="true" tabindex="-1" @endunless>
+                    Registrarme con Google
+                </a>
+                <p class="integration-note">
+                    {{ $googleEnabled ? 'Google confirma tu identidad y correo; luego completarás únicamente los datos clínicos obligatorios.' : 'El registro tradicional continúa disponible. Google se habilita mediante configuración local.' }}
+                </p>
+                <div class="oauth-separator"><span>o completa el formulario</span></div>
+
                 <form method="POST" action="{{ route('register.store') }}" data-multistep-form data-submit-form novalidate>
                     @csrf
 

@@ -3,6 +3,10 @@
 @section('title', 'Nueva contraseña | '.config('clinic.identity.name'))
 @section('body_class', 'auth-page auth-page--compact')
 
+@push('head')
+    <meta name="referrer" content="no-referrer">
+@endpush
+
 @section('content')
     <main id="contenido-principal" class="compact-auth-shell">
         <a class="brand" href="{{ route('home') }}" aria-label="Volver al inicio">
@@ -18,11 +22,6 @@
             </header>
 
             @include('layouts.alerts')
-
-            <div class="service-notice" role="status">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 4h.01M4 4h16v16H4z" /></svg>
-                <p><strong>Validación no disponible.</strong> Esta interfaz no modificará contraseñas hasta que exista el endpoint correspondiente.</p>
-            </div>
 
             <form class="auth-form" method="POST" action="{{ route('password.update') }}">
                 @csrf
@@ -45,8 +44,17 @@
                         <button type="button" class="password-toggle" aria-controls="new_password_confirmation" aria-pressed="false" data-password-toggle><span>Mostrar</span></button>
                     </div>
                 </div>
-                <button class="button button--primary button--full" type="submit" disabled>Guardar nueva contraseña</button>
+                <p class="field__help">Mínimo 10 caracteres, con mayúsculas, minúsculas y números.</p>
+                <button class="button button--primary button--full" type="submit" data-submit-button>Guardar nueva contraseña</button>
             </form>
         </section>
     </main>
 @endsection
+
+@push('scripts')
+    <script>
+        if (window.history?.replaceState) {
+            window.history.replaceState({}, document.title, @json(route('password.reset')));
+        }
+    </script>
+@endpush

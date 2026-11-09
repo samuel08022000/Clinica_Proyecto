@@ -19,19 +19,15 @@
 
             @include('layouts.alerts')
 
-            <div class="service-notice" role="status">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 4h.01M4 4h16v16H4z" /></svg>
-                <p><strong>Servicio pendiente.</strong> La base contempla tokens de 15 minutos, pero Quarkus aún no expone la solicitud ni el envío por correo.</p>
-            </div>
-
             <form class="auth-form" method="POST" action="{{ route('password.email') }}">
                 @csrf
                 <div class="field">
                     <label for="recovery_email">Correo electrónico</label>
                     <input id="recovery_email" name="email" type="email" value="{{ old('email') }}" autocomplete="email" inputmode="email" required>
                 </div>
-                <button class="button button--primary button--full" type="submit" disabled>Enviar enlace de recuperación</button>
-                <p class="integration-note">No se enviará ningún mensaje hasta integrar el endpoint y el servicio de correo.</p>
+                @error('email')<p id="recovery-email-error" class="field__error">{{ $message }}</p>@enderror
+                <button class="button button--primary button--full" type="submit" data-submit-button>Enviar enlace de recuperación</button>
+                <p class="integration-note">Por privacidad, la respuesta será la misma exista o no una cuenta asociada.</p>
             </form>
         </section>
     </main>

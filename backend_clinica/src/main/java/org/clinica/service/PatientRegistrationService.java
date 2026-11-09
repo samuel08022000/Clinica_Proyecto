@@ -168,6 +168,14 @@ public class PatientRegistrationService {
                 OffsetDateTime.ofInstant(challenge.expiresAt(), ZoneOffset.UTC));
     }
 
+    /** Inicia la verificacion existente para una cuenta Google cuyo correo no fue confirmado. */
+    @Transactional
+    public OtpChallengeData issueEmailVerificationForUser(String userId) {
+        PatientAccount account = gateway.findByUserId(userId)
+                .orElseThrow(() -> new AuthException(404, "PATIENT_NOT_FOUND", "La cuenta no esta disponible."));
+        return issueAndDeliver(account);
+    }
+
     private OtpChallengeData issueAndDeliver(PatientAccount account) {
         requireEligiblePendingAccount(account);
         String masked = maskEmail(account.email());
