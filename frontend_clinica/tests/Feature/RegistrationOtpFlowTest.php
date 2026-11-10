@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class RegistrationOtpFlowTest extends TestCase
@@ -103,6 +104,65 @@ class RegistrationOtpFlowTest extends TestCase
         $this->post(route('register.store'), $data)->assertSessionHasErrors('password');
 
         Http::assertNothingSent();
+    }
+
+    public function test_registration_waits_for_smtp_without_extending_the_connection_timeout(): void
+    {
+        config()->set('services.quarkus.timeout', 8);
+        config()->set('services.quarkus.registration_timeout', 30);
+        config()->set('services.quarkus.connect_timeout', 3);
+        Http::fake(function (Request $request, array $options) {
+            $this->assertEquals(30, $options['timeout']);
+            $this->assertEquals(3, $options['connect_timeout']);
+            $verification = $this->challengeData();
+            $verification['deliveryMode'] = 'SMTP';
+            $verification['deliveryConfirmed'] = true;
+            return Http::response(['data' => ['verification' => $verification]], 201);
+        });
+
+        $this->post(route('register.store'), $this->registrationData())
+            ->assertRedirect(route('verification.email'))
+            ->assertSessionHas('registration_delivery_mode', 'SMTP')
+            ->assertSessionHas('registration_delivery_confirmed', true);
+        Http::assertSentCount(1);
+    }
+
+    public function test_registration_timeout_is_distinguished_and_logs_only_safe_metadata(): void
+    {
+        $this->withoutExceptionHandling();
+        Log::spy();
+        $cause = new \GuzzleHttp\Exception\NetworkTimeoutException('Internal transport detail',
+            new \GuzzleHttp\Psr7\Request('POST', 'http://localhost:8080/api/v1/auth/register'));
+        $calls = 0;
+        Http::fake(function () use ($cause, &$calls) {
+            $calls++;
+            throw new ConnectionException('Internal transport detail', 0, $cause);
+        });
+
+        $this->from(route('register'))->post(route('register.store'), $this->registrationData())
+            ->assertRedirect(route('register'))
+            ->assertSessionHasErrors(['registration' =>
+                'El servicio de registro tardó demasiado en responder. Comprueba tu correo antes de volver a intentarlo.'])
+            ->assertSessionMissing('_old_input.password')
+            ->assertSessionMissing('_old_input.password_confirmation');
+        $this->assertSame(1, $calls);
+        Log::shouldHaveReceived('warning')->once()->with('Registration transport failure',
+            \Mockery::on(fn (array $context): bool =>
+                array_keys($context) === ['transport_errno', 'elapsed_ms']
+                && $context['transport_errno'] === 28 && $context['elapsed_ms'] >= 0));
+    }
+
+    public function test_smtp_http_failures_are_not_presented_as_connection_failures(): void
+    {
+        foreach (['OTP_DELIVERY_FAILED', 'OTP_SMTP_NOT_CONFIGURED'] as $code) {
+            Http::fake(['*/auth/register' => Http::response([
+                'error' => ['code' => $code, 'message' => 'Private provider detail'],
+            ], 503)]);
+            $this->from(route('register'))->post(route('register.store'), $this->registrationData())
+                ->assertRedirect(route('register'))
+                ->assertSessionHasErrors(['registration' =>
+                    'La cuenta no pudo crearse porque la entrega OTP no está disponible. Intenta nuevamente más tarde.']);
+        }
     }
 
     public function test_registration_connection_failure_is_recoverable(): void

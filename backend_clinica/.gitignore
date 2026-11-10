@@ -38,6 +38,8 @@ nb-configuration.xml
 
 # Local environment
 .env
+.env.*
+!.env.example
 
 # V3 demo generada localmente; la plantilla segura vive en scripts/dev/.
 /db/dev-migration/*.sql

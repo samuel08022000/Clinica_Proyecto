@@ -60,7 +60,8 @@ class QuarkusApiClient
 
     public function registerPatient(array $data): Response
     {
-        return $this->client(authenticated: false)->post(
+        return $this->client(authenticated: false)
+            ->timeout((int) config('services.quarkus.registration_timeout', 30))->post(
             $this->url(config('clinic.endpoints.register') ?: 'auth/register'),
             $data
         );

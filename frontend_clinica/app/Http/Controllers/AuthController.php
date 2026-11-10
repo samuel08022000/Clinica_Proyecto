@@ -7,6 +7,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -297,6 +298,7 @@ class AuthController extends Controller
             ],
         ]);
 
+        $startedAt = hrtime(true);
         try {
             $response = $this->apiClient->registerPatient([
                 'nombreCompleto' => $request->string('nombre_completo')->trim()->toString(),
@@ -307,10 +309,24 @@ class AuthController extends Controller
                 'telefono' => $request->string('telefono')->trim()->toString(),
                 'ciudadResidencia' => $request->string('ciudad_residencia')->trim()->toString(),
             ]);
-        } catch (ConnectionException) {
+        } catch (ConnectionException $exception) {
+            $previous = $exception->getPrevious();
+            $context = $previous !== null && is_callable([$previous, 'getHandlerContext'])
+                ? $previous->getHandlerContext() : [];
+            $isTimeout = $previous instanceof \GuzzleHttp\Exception\NetworkTimeoutException
+                || $previous instanceof \GuzzleHttp\Exception\ConnectTimeoutException
+                || $previous instanceof \GuzzleHttp\Exception\ResponseTimeoutException
+                || (int) ($context['errno'] ?? 0) === 28;
+            $errno = $isTimeout ? 28 : (int) ($context['errno'] ?? 0);
+            Log::warning('Registration transport failure', [
+                'transport_errno' => $errno,
+                'elapsed_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
+            ]);
             return back()
                 ->withInput($request->except(['password', 'password_confirmation']))
-                ->withErrors(['registration' => 'No pudimos conectar con el servicio de registro. Intenta nuevamente.']);
+                ->withErrors(['registration' => $errno === 28
+                    ? 'El servicio de registro tardó demasiado en responder. Comprueba tu correo antes de volver a intentarlo.'
+                    : 'No pudimos conectar con el servicio de registro. Intenta nuevamente.']);
         }
 
         if (! $response->successful()) {
