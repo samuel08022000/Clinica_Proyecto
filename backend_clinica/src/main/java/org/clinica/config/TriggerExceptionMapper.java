@@ -34,6 +34,18 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4002".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "El motivo debe tener entre 1 y 2000 caracteres.");
+            }
+            if ("P4032".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "OPERACION_NO_AUTORIZADA", "No tiene permiso para modificar esta cita.");
+            }
+            if ("P4042".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe la cita.");
+            }
+            if ("P4092".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "TRANSICION_NO_PERMITIDA", "El estado o la ventana de la cita no permiten esta operación.");
+            }
             if ("P4001".equals(psql.getSQLState())) {
                 return json(Response.Status.BAD_REQUEST, "QR_INVALIDO", "El código QR no es válido.");
             }

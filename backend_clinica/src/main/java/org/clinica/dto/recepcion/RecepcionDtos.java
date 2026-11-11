@@ -22,6 +22,35 @@ public final class RecepcionDtos {
         public String tokenQr;
     }
 
+    public static class CancelacionSolicitud extends SolicitudConCamposPermitidos {
+        public String motivo;
+    }
+
+    public static class InasistenciaSolicitud extends SolicitudConCamposPermitidos { }
+
+    @RegisterForReflection
+    public record PaginaCitas(List<CitaHistorial> citas, int page, int size, boolean hayMas) { }
+
+    @RegisterForReflection
+    public record CitaHistorial(String codCit, String codPac, String nombrePaciente, String codMed,
+            String nombreMedico, String codEsp, String nombreEspecialidad, LocalDate fecha, LocalTime horaInicio,
+            LocalTime horaFin, String estado, String canalReserva, String motivoCancelacion, String canceladoPorUsu,
+            OffsetDateTime canceladoEn, OffsetDateTime horaLlegadaCheckin, String checkinPorUsu,
+            OffsetDateTime fechaAtencion, String codIncInasistencia, OffsetDateTime inasistenciaRegistradaEn,
+            String inasistenciaPorUsu, String motivoInasistencia) { }
+
+    @RegisterForReflection
+    public record Cancelacion(String codCit, String estado, String motivoCancelacion, String canceladoPorUsu,
+            OffsetDateTime canceladoEn) {
+        @JsonProperty public boolean cancelada() { return "Cancelada".equals(estado); }
+    }
+
+    @RegisterForReflection
+    public record Inasistencia(String codCit, String estado, String codInc, String registradoPorUsu,
+            OffsetDateTime fechaRegistro, String motivo) {
+        @JsonProperty public boolean inasistenciaRegistrada() { return "No Asistió".equals(estado); }
+    }
+
     @RegisterForReflection
     public record Acreditacion(String codCit, String nombrePaciente, LocalDate fecha, String estado,
             boolean qrValido, boolean admiteCheckin) { }

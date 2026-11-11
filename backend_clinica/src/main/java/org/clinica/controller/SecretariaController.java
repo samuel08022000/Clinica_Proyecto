@@ -2,6 +2,7 @@ package org.clinica.controller;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
@@ -27,6 +28,9 @@ import org.clinica.service.AtencionCheckinService;
 import org.clinica.service.PersonalService;
 import org.clinica.service.RecepcionService;
 import org.clinica.service.ReservaCitaService;
+import org.clinica.service.GestionCitaService;
+import org.clinica.dto.recepcion.RecepcionDtos.CancelacionSolicitud;
+import org.clinica.dto.recepcion.RecepcionDtos.InasistenciaSolicitud;
 
 import java.util.List;
 import java.util.Set;
@@ -39,6 +43,7 @@ public class SecretariaController {
     @Inject RecepcionService recepcion;
     @Inject ReservaCitaService reservas;
     @Inject AtencionCheckinService checkin;
+    @Inject GestionCitaService gestion;
 
     @GET
     @Path("/pacientes")
@@ -121,6 +126,41 @@ public class SecretariaController {
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         String actor = exigirSecretaria(authorization);
         return respuestaPrivada(checkin.registrar(solicitud, actor));
+    }
+
+    @GET
+    @Path("/citas")
+    public Response listarCitas(@QueryParam("fecha") String fecha, @QueryParam("desde") String desde,
+            @QueryParam("hasta") String hasta, @QueryParam("estado") String estado,
+            @QueryParam("codPac") String codPac, @QueryParam("codMed") String codMed,
+            @QueryParam("page") @DefaultValue("0") String page, @QueryParam("size") @DefaultValue("20") String size,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirSecretaria(authorization);
+        return respuestaPrivada(gestion.listar(fecha, desde, hasta, estado, codPac, codMed, page, size, false));
+    }
+
+    @GET
+    @Path("/pacientes/{codPac}/historial")
+    public Response historial(@PathParam("codPac") String codPac, @QueryParam("desde") String desde,
+            @QueryParam("hasta") String hasta, @QueryParam("estado") String estado,
+            @QueryParam("page") @DefaultValue("0") String page, @QueryParam("size") @DefaultValue("20") String size,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirSecretaria(authorization);
+        return respuestaPrivada(gestion.listar(null, desde, hasta, estado, codPac, null, page, size, true));
+    }
+
+    @POST
+    @Path("/citas/{codCit}/cancelar")
+    public Response cancelar(@PathParam("codCit") String codCit, CancelacionSolicitud solicitud,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        return respuestaPrivada(gestion.cancelar(codCit, solicitud, exigirSecretaria(authorization)));
+    }
+
+    @POST
+    @Path("/citas/{codCit}/inasistencia")
+    public Response inasistencia(@PathParam("codCit") String codCit, InasistenciaSolicitud solicitud,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        return respuestaPrivada(gestion.registrarInasistencia(codCit, solicitud, exigirSecretaria(authorization)));
     }
 
     private static Response respuestaPrivada(Object entidad) {

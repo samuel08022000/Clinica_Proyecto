@@ -10,10 +10,50 @@ import org.hibernate.query.NativeQuery;
 
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.clinica.dto.recepcion.RecepcionDtos.CitaHistorial;
+import org.clinica.dto.recepcion.RecepcionDtos.PaginaCitas;
 
 /** Consultas administrativas. Las escrituras continúan en CitaFunctionRepository. */
 @ApplicationScoped
 public class CitaRepository implements PanacheRepositoryBase<Cita,String> {
+    private static final String HISTORIAL = """
+            SELECT h.codCit,h.codPac,u.nombreCompleto,h.codMed,h.nombreMedico,h.codEsp,h.nombreEspecialidad,
+                h.fecha,h.horaInicio,h.horaFin,h.estado,h.canalReserva,c.motivoCancelacion,c.canceladoPorUsu,
+                h.canceladoEn,h.horaLlegadaCheckin,c.checkinPorUsu,h.fechaAtencion,
+                i.codInc,i.fechaRegistro,i.registradoPorUsu,i.motivo
+            FROM VistaHistorialCitas h JOIN Cita c ON c.codCit=h.codCit
+            JOIN Paciente p ON p.codPac=h.codPac JOIN Usuario u ON u.codUsu=p.codUsu
+            LEFT JOIN IncidenciaSancion i ON i.codCit=h.codCit AND i.tipoIncidencia='INASISTENCIA_NO_SHOW'
+                AND i.secuencial=(SELECT max(i2.secuencial) FROM IncidenciaSancion i2
+                    WHERE i2.codCit=h.codCit AND i2.tipoIncidencia='INASISTENCIA_NO_SHOW')
+            WHERE 1=1
+            """;
+
+    public Optional<CitaHistorial> consultarDetalle(String codCit) {
+        return Optional.ofNullable(getEntityManager().createQuery(HISTORIAL + " AND h.codCit=:cit", CitaHistorial.class)
+                .setParameter("cit", codCit).getSingleResultOrNull());
+    }
+
+    public PaginaCitas historial(String codPac, String codMed, LocalDate desde, LocalDate hasta,
+            String estado, int page, int size) {
+        StringBuilder hql = new StringBuilder(HISTORIAL);
+        Map<String, Object> parametros = new LinkedHashMap<>();
+        if (codPac != null) { hql.append(" AND h.codPac=:pac"); parametros.put("pac", codPac); }
+        if (codMed != null) { hql.append(" AND h.codMed=:med"); parametros.put("med", codMed); }
+        if (desde != null) { hql.append(" AND h.fecha>=:desde"); parametros.put("desde", desde); }
+        if (hasta != null) { hql.append(" AND h.fecha<=:hasta"); parametros.put("hasta", hasta); }
+        if (estado != null) { hql.append(" AND h.estado=:estado"); parametros.put("estado", estado); }
+        hql.append(" ORDER BY h.fecha,h.horaInicio,h.codCit");
+        var consulta = getEntityManager().createQuery(hql.toString(), CitaHistorial.class);
+        parametros.forEach(consulta::setParameter);
+        List<CitaHistorial> filas = consulta.setFirstResult(page * size).setMaxResults(size + 1).getResultList();
+        boolean hayMas = filas.size() > size;
+        return new PaginaCitas(List.copyOf(hayMas ? filas.subList(0, size) : filas), page, size, hayMas);
+    }
+
     public Optional<Acreditacion> consultarAcreditacion(String codCit) {
         NativeQuery<?> consulta = getEntityManager().createNativeQuery("""
                 SELECT c.cod_cit,u.nombre_completo,c.fecha,c.estado,

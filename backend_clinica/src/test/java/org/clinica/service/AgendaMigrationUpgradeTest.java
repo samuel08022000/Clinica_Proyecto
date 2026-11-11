@@ -26,7 +26,7 @@ class AgendaMigrationUpgradeTest {
     @ConfigProperty(name = "quarkus.datasource.password") Optional<String> configuredPassword;
 
     @ParameterizedTest
-    @ValueSource(strings = {"4", "5", "6"})
+    @ValueSource(strings = {"4", "5", "6", "7"})
     void upgradesExistingAppointmentsAndBlocksFromPreviousVersions(String previousVersion) throws Exception {
         String password = configuredPassword.orElse("");
         String database = "clinica_upgrade_" + UUID.randomUUID().toString().replace("-", "");
@@ -46,6 +46,9 @@ class AgendaMigrationUpgradeTest {
         String appointment;
         String slot;
         String originalQr;
+        String cancelled = null;
+        String cancellationActor = null;
+        String cancelledQr = null;
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             connection.setAutoCommit(false);
             String admin = user(connection, suffix + "a@example.test", hash, "ROL004");
@@ -64,6 +67,13 @@ class AgendaMigrationUpgradeTest {
                     """, doctor);
             slot = scalar(connection, "SELECT cod_slot FROM public.slots_agenda WHERE cod_med=? ORDER BY inicio_at LIMIT 1", doctor);
             appointment = scalar(connection, "SELECT public.reservar_cita(?,?,?,'Admin',NULL)", patient, slot, admin);
+            if ("7".equals(previousVersion)) {
+                String otherSlot = scalar(connection, "SELECT cod_slot FROM public.slots_agenda WHERE cod_med=? AND cod_slot<>? ORDER BY inicio_at LIMIT 1", doctor, slot);
+                cancelled = scalar(connection, "SELECT public.reservar_cita(?,?,?,'Admin',NULL)", patient, otherSlot, admin);
+                scalar(connection, "SELECT public.cancelar_cita(?,?,'Cancelación anterior a V8')::text", cancelled, admin);
+                cancellationActor = admin;
+                cancelledQr = scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", cancelled);
+            }
             legacyBlock = scalar(connection, """
                     INSERT INTO public.bloqueos_agenda(cod_med,cod_usu_admin,fecha_bloqueo,motivo)
                     SELECT ?,?,fecha,'Bloqueo anterior a V5' FROM public.slots_agenda WHERE cod_slot=? RETURNING cod_blo
@@ -82,6 +92,17 @@ class AgendaMigrationUpgradeTest {
             assertTrue(Integer.parseInt(scalar(connection, "SELECT count(*)::text FROM public.bitacora WHERE nombre_tabla='citas' AND clave_registro=?", appointment)) > 0);
             assertTrue(originalQr.equals(scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", appointment)), "La migración debe conservar el QR original");
             assertEquals("1", scalar(connection, "SELECT count(*)::text FROM public.citas c CROSS JOIN LATERAL public.verificar_token_qr(c.token_qr) q WHERE c.cod_cit=? AND q.cod_cit=c.cod_cit AND q.fecha=c.fecha", appointment));
+            if (cancelled != null) {
+                assertEquals("Cancelada", scalar(connection, "SELECT estado FROM public.citas WHERE cod_cit=?", cancelled));
+                assertEquals("Cancelación anterior a V8", scalar(connection, "SELECT motivo_cancelacion FROM public.citas WHERE cod_cit=?", cancelled));
+                assertEquals(cancellationActor, scalar(connection, "SELECT cancelado_por_usu FROM public.citas WHERE cod_cit=?", cancelled));
+                assertEquals("1", scalar(connection, "SELECT count(*)::text FROM public.incidencias_sanciones WHERE cod_cit=? AND tipo_incidencia='CANCELACION'", cancelled));
+                assertTrue(cancelledQr.equals(scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", cancelled)));
+                String cancelledCode = cancelled;
+                String actorId = cancellationActor;
+                assertEquals("P4092", assertThrows(SQLException.class, () -> scalar(connection,
+                        "SELECT public.cancelar_cita(?,?,'Segundo intento')::text", cancelledCode, actorId)).getSQLState());
+            }
             assertEquals("P4030", assertThrows(SQLException.class, () -> scalar(connection,
                     "SELECT public.reservar_cita('PAC999999','SLT99999999','USU999999','Ventanilla',NULL)")).getSQLState());
         }
