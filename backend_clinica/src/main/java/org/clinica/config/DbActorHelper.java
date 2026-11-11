@@ -22,10 +22,11 @@ public class DbActorHelper {
 
     @Transactional(Transactional.TxType.MANDATORY)
     public void fijarActor(String codUsu) {
-        if (codUsu != null && !codUsu.isBlank()) {
-            em.createNativeQuery("SELECT set_config('app.cod_usu', :codUsu, true)")
-              .setParameter("codUsu", codUsu)
-              .getSingleResult();
+        if (codUsu == null || codUsu.isBlank()) {
+            throw new IllegalArgumentException("Se requiere el identificador del actor autenticado.");
         }
+        em.createNativeQuery("SELECT set_config('app.cod_usu', :codUsu, true)")
+                .setParameter("codUsu", codUsu)
+                .getSingleResult();
     }
 }

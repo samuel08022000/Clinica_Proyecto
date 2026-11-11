@@ -33,10 +33,14 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
         }
 
         PSQLException psql = buscarPSQLException(exception);
-        if (psql != null && psql.getServerErrorMessage() != null) {
-            String mensajePostgres = psql.getServerErrorMessage().getMessage();
-            LOG.debugf("Regla de negocio rechazada por PostgreSQL [%s]: %s", psql.getSQLState(), mensajePostgres);
-            return json(Response.Status.BAD_REQUEST, "REGLA_NEGOCIO_BD", mensajePostgres);
+        if (psql != null) {
+            if ("P0001".equals(psql.getSQLState()) && psql.getServerErrorMessage() != null) {
+                // RAISE EXCEPTION comunica los rechazos de negocio definidos en las funciones de la clínica.
+                return json(Response.Status.BAD_REQUEST, "REGLA_NEGOCIO_BD", psql.getServerErrorMessage().getMessage());
+            }
+            if ("23505".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "DUPLICADO", "Ya existe un registro con esos datos.");
+            }
         }
 
         LOG.error("Error no controlado en la API", exception);

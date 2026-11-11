@@ -39,6 +39,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.clinica.config.BearerToken.bearerToken;
+
 @Path("/api/v1/auth")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -222,13 +224,6 @@ public class AuthController {
             return "unknown";
         }
         return routingContext.request().remoteAddress().hostAddress();
-    }
-
-    private static String bearerToken(String authorization) {
-        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return null;
-        }
-        return authorization.substring(7).trim();
     }
 
     private static Response.ResponseBuilder noStore(Response.ResponseBuilder builder) {

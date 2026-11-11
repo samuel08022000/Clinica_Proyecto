@@ -10,6 +10,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.clinica.dto.personal.ActualizarMedicoDTO;
@@ -17,54 +18,58 @@ import org.clinica.dto.personal.CambiarEstadoDTO;
 import org.clinica.dto.personal.CrearMedicoDTO;
 import org.clinica.dto.personal.EspecialidadOpcionDTO;
 import org.clinica.dto.personal.MedicoRespuestaDTO;
+import org.clinica.service.AuthException;
+import org.clinica.service.AuthService;
 import org.clinica.service.PersonalService;
 
 import java.util.List;
+import java.util.Set;
 
-/**
- * Módulo 2A — Gestión de doctores. Solo el Administrador (ROL004).
- * Laravel envía el actor en los headers X-Actor-Cod-Usu y X-Actor-Rol (ver QuarkusApiClient).
- */
+import static org.clinica.config.BearerToken.bearerToken;
+
+/** Gestión de doctores reservada al Administrador (ROL004). */
 @Path("/api/v1/personal")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class PersonalController {
 
-    private static final String ROL_ADMIN = "ROL004";
+    private static final Set<String> ROLES_PERMITIDOS = Set.of("ROL004");
 
     @Inject
     PersonalService service;
 
+    @Inject
+    AuthService authService;
+
     @GET
     @Path("/medicos")
     public List<MedicoRespuestaDTO> listar(@QueryParam("estado") String estado,
-                                           @HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
+                                           @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirAdmin(authorization);
         return service.listar(estado);
     }
 
     @GET
     @Path("/medicos/{codMed}")
     public MedicoRespuestaDTO obtener(@PathParam("codMed") String codMed,
-                                      @HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
+                                      @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirAdmin(authorization);
         return service.obtener(codMed);
     }
 
     @GET
     @Path("/especialidades")
-    public List<EspecialidadOpcionDTO> especialidadesActivas(@HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
+    public List<EspecialidadOpcionDTO> especialidadesActivas(
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirAdmin(authorization);
         return service.listarEspecialidadesActivas();
     }
 
     @POST
     @Path("/medicos")
     public Response crear(CrearMedicoDTO dto,
-                          @HeaderParam("X-Actor-Cod-Usu") String actor,
-                          @HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
-        exigirActor(actor);
+                          @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
         exigirCuerpo(dto);
         return Response.status(Response.Status.CREATED).entity(service.registrarMedico(dto, actor)).build();
     }
@@ -73,10 +78,8 @@ public class PersonalController {
     @Path("/medicos/{codMed}")
     public MedicoRespuestaDTO actualizar(@PathParam("codMed") String codMed,
                                          ActualizarMedicoDTO dto,
-                                         @HeaderParam("X-Actor-Cod-Usu") String actor,
-                                         @HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
-        exigirActor(actor);
+                                         @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
         exigirCuerpo(dto);
         return service.actualizarMedico(codMed, dto, actor);
     }
@@ -86,26 +89,22 @@ public class PersonalController {
     @Path("/medicos/{codMed}/estado")
     public MedicoRespuestaDTO cambiarEstado(@PathParam("codMed") String codMed,
                                             CambiarEstadoDTO dto,
-                                            @HeaderParam("X-Actor-Cod-Usu") String actor,
-                                            @HeaderParam("X-Actor-Rol") String rol) {
-        exigirAdmin(rol);
-        exigirActor(actor);
+                                            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
         exigirCuerpo(dto);
         return service.cambiarEstado(codMed, dto.estado, actor);
     }
 
-    private static void exigirAdmin(String rol) {
-        if (!ROL_ADMIN.equals(rol)) {
-            throw PersonalService.error(Response.Status.FORBIDDEN, "SIN_PERMISO",
-                    "Solo el administrador puede gestionar doctores.");
-        }
-    }
-
-    /** En escrituras el actor es obligatorio: queda registrado en la bitácora. */
-    private static void exigirActor(String actor) {
-        if (actor == null || actor.isBlank()) {
-            throw PersonalService.error(Response.Status.FORBIDDEN, "SIN_PERMISO",
-                    "Falta el usuario que realiza la operación.");
+    private String exigirAdmin(String authorization) {
+        try {
+            return authService.requireAnyRole(bearerToken(authorization), ROLES_PERMITIDOS)
+                    .user().id();
+        } catch (AuthException exception) {
+            if ("FORBIDDEN".equals(exception.code())) {
+                throw PersonalService.error(Response.Status.FORBIDDEN, "SIN_PERMISO",
+                        "Solo el administrador puede gestionar doctores.");
+            }
+            throw exception;
         }
     }
 
