@@ -34,7 +34,7 @@ services:
   # 3. Contenedor del Backend Quarkus (Opcional: usar con --profile fullstack)
   backend_quarkus:
     profiles: ["fullstack"]
-    image: maven:3.9.9-eclipse-temurin-21
+    image: maven:3.10.0-eclipse-temurin-25
     working_dir: /app
     volumes:
       - ./backend_clinica:/app
@@ -46,7 +46,7 @@ services:
       QUARKUS_HTTP_HOST: 0.0.0.0
     ports:
       - "127.0.0.1:${QUARKUS_HOST_PORT:-8080}:8080"
-    command: ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
+    command: sh ./mvnw quarkus:dev -Dquarkus.http.host=0.0.0.0
     depends_on:
       postgres_db:
         condition: service_healthy
@@ -54,7 +54,7 @@ services:
   # 4. Contenedor del Frontend Laravel (Opcional: usar con --profile fullstack)
   frontend_laravel:
     profiles: ["fullstack"]
-    image: php:8.3-cli
+    image: php:8.5-cli
     working_dir: /var/www/html
     volumes:
       - ./frontend_clinica:/var/www/html

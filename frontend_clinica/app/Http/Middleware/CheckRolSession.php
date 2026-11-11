@@ -23,10 +23,11 @@ class CheckRolSession
                 ? $this->apiClient->authenticatedUser()
                 : $this->apiClient->authorizeRoles($rolesPermitidos);
         } catch (ConnectionException) {
-            return $this->endInvalidSession(
-                $request,
-                'No fue posible validar tu sesión porque el servicio de acceso no está disponible.'
-            );
+            return $this->serviceUnavailable();
+        }
+
+        if ($response->serverError() || $response->status() === 404) {
+            return $this->serviceUnavailable();
         }
 
         if ($response->status() === 403
@@ -75,5 +76,12 @@ class CheckRolSession
         $request->session()->regenerateToken();
 
         return redirect()->route('login')->withErrors(['authentication' => $message]);
+    }
+
+    private function serviceUnavailable(): Response
+    {
+        return response('No fue posible validar tu sesión porque el servicio de acceso no está disponible. Reintenta en unos momentos.', 503)
+            ->header('Retry-After', '30')
+            ->header('Cache-Control', 'no-store');
     }
 }

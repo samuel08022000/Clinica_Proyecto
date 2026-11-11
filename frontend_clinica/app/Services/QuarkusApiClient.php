@@ -31,7 +31,10 @@ class QuarkusApiClient
     {
         return $this->client()->get(
             $this->url($endpoint),
-            array_filter($query, fn (mixed $value): bool => $value !== null && $value !== '')
+            array_map(
+                fn (mixed $value): mixed => is_bool($value) ? ($value ? 'true' : 'false') : $value,
+                array_filter($query, fn (mixed $value): bool => $value !== null && $value !== '')
+            )
         );
     }
 
@@ -62,9 +65,9 @@ class QuarkusApiClient
     {
         return $this->client(authenticated: false)
             ->timeout((int) config('services.quarkus.registration_timeout', 30))->post(
-            $this->url(config('clinic.endpoints.register') ?: 'auth/register'),
-            $data
-        );
+                $this->url(config('clinic.endpoints.register') ?: 'auth/register'),
+                $data
+            );
     }
 
     public function googleAuthorizationUrl(array $data): Response
