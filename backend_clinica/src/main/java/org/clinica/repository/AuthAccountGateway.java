@@ -57,7 +57,8 @@ public class AuthAccountGateway {
                 Optional<Paciente> paciente = pacienteRepository.findByCodUsu(usuario.codUsu);
                 profilePresent = paciente.isPresent();
                 if (paciente.isPresent()) {
-                    profileStatus = paciente.get().estadoCuenta;
+                    // La composición del perfil usa la misma vigencia PostgreSQL que reservas y recepción.
+                    profileStatus = pacienteRepository.estadoReservaEfectivo(paciente.get().codPac);
                     blockedUntil = paciente.get().bloqueadoHasta;
                     emailVerified = paciente.get().emailVerificado;
                 }

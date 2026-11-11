@@ -34,6 +34,18 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4003".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "Debe indicar un motivo válido y una duración de 1 a 365 días.");
+            }
+            if ("P4033".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "SANCION_NO_AUTORIZADA", "Solo un administrador activo puede aplicar sanciones.");
+            }
+            if ("P4043".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe el paciente.");
+            }
+            if ("P4093".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "CONFLICTO_SANCION", "El paciente tiene una restricción vigente o un estado incompatible.");
+            }
             if ("P4002".equals(psql.getSQLState())) {
                 return json(Response.Status.BAD_REQUEST, "VALIDACION", "El motivo debe tener entre 1 y 2000 caracteres.");
             }

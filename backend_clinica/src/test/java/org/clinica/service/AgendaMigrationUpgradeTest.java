@@ -26,7 +26,7 @@ class AgendaMigrationUpgradeTest {
     @ConfigProperty(name = "quarkus.datasource.password") Optional<String> configuredPassword;
 
     @ParameterizedTest
-    @ValueSource(strings = {"4", "5", "6", "7"})
+    @ValueSource(strings = {"4", "5", "6", "7", "8"})
     void upgradesExistingAppointmentsAndBlocksFromPreviousVersions(String previousVersion) throws Exception {
         String password = configuredPassword.orElse("");
         String database = "clinica_upgrade_" + UUID.randomUUID().toString().replace("-", "");
@@ -49,6 +49,10 @@ class AgendaMigrationUpgradeTest {
         String cancelled = null;
         String cancellationActor = null;
         String cancelledQr = null;
+        String legacySanction = null;
+        String legacySanctionEnd = null;
+        String sanctionedPatient = null;
+        String sanctionAdmin = null;
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             connection.setAutoCommit(false);
             String admin = user(connection, suffix + "a@example.test", hash, "ROL004");
@@ -67,7 +71,7 @@ class AgendaMigrationUpgradeTest {
                     """, doctor);
             slot = scalar(connection, "SELECT cod_slot FROM public.slots_agenda WHERE cod_med=? ORDER BY inicio_at LIMIT 1", doctor);
             appointment = scalar(connection, "SELECT public.reservar_cita(?,?,?,'Admin',NULL)", patient, slot, admin);
-            if ("7".equals(previousVersion)) {
+            if ("7".equals(previousVersion) || "8".equals(previousVersion)) {
                 String otherSlot = scalar(connection, "SELECT cod_slot FROM public.slots_agenda WHERE cod_med=? AND cod_slot<>? ORDER BY inicio_at LIMIT 1", doctor, slot);
                 cancelled = scalar(connection, "SELECT public.reservar_cita(?,?,?,'Admin',NULL)", patient, otherSlot, admin);
                 scalar(connection, "SELECT public.cancelar_cita(?,?,'Cancelación anterior a V8')::text", cancelled, admin);
@@ -79,6 +83,14 @@ class AgendaMigrationUpgradeTest {
                     SELECT ?,?,fecha,'Bloqueo anterior a V5' FROM public.slots_agenda WHERE cod_slot=? RETURNING cod_blo
                     """, doctor, admin, slot);
             originalQr = scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", appointment);
+            if ("8".equals(previousVersion)) {
+                // V8 admitía sanciones superpuestas. V9 debe conservarlas, no deduplicarlas.
+                legacySanction = scalar(connection, "SELECT public.registrar_sancion(?,?,'Sanción anterior a V9',2)", patient, admin);
+                scalar(connection, "SELECT public.registrar_sancion(?,?,'Otra sanción histórica solapada',3)", patient, admin);
+                legacySanctionEnd = scalar(connection, "SELECT fecha_fin_sancion::text FROM public.incidencias_sanciones WHERE cod_inc=?", legacySanction);
+                sanctionedPatient = patient;
+                sanctionAdmin = admin;
+            }
             connection.commit();
         }
         Flyway.configure().dataSource(jdbcUrl, username, password).locations("classpath:db/migration").load().migrate();
@@ -102,6 +114,15 @@ class AgendaMigrationUpgradeTest {
                 String actorId = cancellationActor;
                 assertEquals("P4092", assertThrows(SQLException.class, () -> scalar(connection,
                         "SELECT public.cancelar_cita(?,?,'Segundo intento')::text", cancelledCode, actorId)).getSQLState());
+            }
+            if (legacySanction != null) {
+                assertEquals(legacySanctionEnd, scalar(connection, "SELECT fecha_fin_sancion::text FROM public.incidencias_sanciones WHERE cod_inc=?", legacySanction));
+                assertEquals("2", scalar(connection, "SELECT count(*)::text FROM public.incidencias_sanciones WHERE cod_pac=? AND tipo_incidencia='SANCION_BLOQUEO'", sanctionedPatient));
+                assertEquals("Bloqueado_Temporal", scalar(connection, "SELECT public.estado_reserva_paciente(?)", sanctionedPatient));
+                String pac = sanctionedPatient;
+                String admin = sanctionAdmin;
+                assertEquals("P4093", assertThrows(SQLException.class, () -> scalar(connection,
+                        "SELECT public.registrar_sancion(?,?,'Intento de solapamiento',1)", pac, admin)).getSQLState());
             }
             assertEquals("P4030", assertThrows(SQLException.class, () -> scalar(connection,
                     "SELECT public.reservar_cita('PAC999999','SLT99999999','USU999999','Ventanilla',NULL)")).getSQLState());
