@@ -48,6 +48,9 @@ public class BloqueoAgenda extends PanacheEntityBase {
     @Column(name = "motivo", nullable = false, length = 500)
     public String motivo;
 
+    @Column(name = "trazabilidad_completa", insertable = false, updatable = false)
+    public boolean trazabilidadCompleta;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "creado_en", insertable = false, updatable = false)
     public OffsetDateTime creadoEn;

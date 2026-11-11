@@ -13,7 +13,7 @@ public class ClinicaDaemonScheduler {
     EntityManager em;
 
     // 1. Desplaza la ventana móvil de 14 días a diario a medianoche (RF-13)
-    @Scheduled(cron = "0 5 0 * * ?")
+    @Scheduled(cron = "0 0 0 * * ?", timeZone = "America/La_Paz")
     @Transactional
     void generarSlotsDiarios() {
         em.createNativeQuery("SELECT public.generar_slots_agenda()").getSingleResult();

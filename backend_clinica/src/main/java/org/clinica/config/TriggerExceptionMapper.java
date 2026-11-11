@@ -34,6 +34,12 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4090".equals(psql.getSQLState()) && psql.getServerErrorMessage() != null) {
+                return json(Response.Status.CONFLICT, "CONFLICTO_AGENDA", psql.getServerErrorMessage().getMessage());
+            }
+            if ("40P01".equals(psql.getSQLState()) || "40001".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "CONFLICTO_CONCURRENTE", "Otra operación modificó la agenda. Reintente la petición.");
+            }
             if ("P0001".equals(psql.getSQLState()) && psql.getServerErrorMessage() != null) {
                 // RAISE EXCEPTION comunica los rechazos de negocio definidos en las funciones de la clínica.
                 return json(Response.Status.BAD_REQUEST, "REGLA_NEGOCIO_BD", psql.getServerErrorMessage().getMessage());

@@ -23,24 +23,18 @@ import org.clinica.dto.personal.MedicoRespuestaDTO;
 import org.clinica.dto.personal.SecretariaRespuestaDTO;
 import org.clinica.dto.personal.SecretariaSolicitudes;
 import org.clinica.dto.personal.SolicitudConCamposPermitidos;
-import org.clinica.service.AuthException;
-import org.clinica.service.AuthService;
+import org.clinica.config.AccesoAdministrativo;
 import org.clinica.service.EspecialidadService;
 import org.clinica.service.PersonalService;
 import org.clinica.service.SecretariaService;
 
 import java.util.List;
-import java.util.Set;
-
-import static org.clinica.config.BearerToken.bearerToken;
 
 /** Gestión de personal reservada al Administrador (ROL004). */
 @Path("/api/v1/personal")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class PersonalController {
-
-    private static final Set<String> ROLES_PERMITIDOS = Set.of("ROL004");
 
     @Inject
     PersonalService service;
@@ -52,7 +46,7 @@ public class PersonalController {
     EspecialidadService especialidadService;
 
     @Inject
-    AuthService authService;
+    AccesoAdministrativo acceso;
 
     @GET
     @Path("/medicos")
@@ -209,16 +203,7 @@ public class PersonalController {
     }
 
     private String exigirAdmin(String authorization) {
-        try {
-            return authService.requireAnyRole(bearerToken(authorization), ROLES_PERMITIDOS)
-                    .user().id();
-        } catch (AuthException exception) {
-            if ("FORBIDDEN".equals(exception.code())) {
-                throw PersonalService.error(Response.Status.FORBIDDEN, "SIN_PERMISO",
-                        "Solo el administrador puede gestionar cuentas de personal.");
-            }
-            throw exception;
-        }
+        return acceso.exigirAdmin(authorization);
     }
 
     private static void exigirSolicitud(SolicitudConCamposPermitidos dto) {

@@ -17,6 +17,7 @@ import org.clinica.dto.personal.MedicoRespuestaDTO;
 import org.clinica.dto.personal.MedicoRespuestaDTO.EspecialidadVinculoDTO;
 import org.clinica.entity.Especialidad;
 import org.clinica.repository.EspecialidadRepository;
+import org.clinica.repository.AgendaRepository;
 import org.clinica.repository.UsuarioRepository;
 
 import java.util.ArrayList;
@@ -51,6 +52,7 @@ public class PersonalService {
     @Inject UsuarioRepository usuarioRepo;
     @Inject EspecialidadRepository especialidadRepo;
     @Inject AuthService authService;
+    @Inject AgendaRepository agendaRepo;
 
     // =====================================================================
     // Consultas
@@ -131,6 +133,7 @@ public class PersonalService {
 
     @Transactional
     public MedicoRespuestaDTO actualizarMedico(String codMed, ActualizarMedicoDTO dto, String codUsuAdmin) {
+        agendaRepo.bloquearMedico(codMed);
         actorHelper.fijarActor(codUsuAdmin);
         MedicoRespuestaDTO actual = obtener(codMed); // 404 si no existe
 
@@ -225,6 +228,7 @@ public class PersonalService {
     /** Inactiva o reactiva al doctor y su usuario (el login debe rechazar usuarios Inactivos). */
     @Transactional
     public MedicoRespuestaDTO cambiarEstado(String codMed, String estado, String codUsuAdmin) {
+        agendaRepo.bloquearMedico(codMed);
         actorHelper.fijarActor(codUsuAdmin);
         validarEstado(estado);
         MedicoRespuestaDTO actual = obtener(codMed);

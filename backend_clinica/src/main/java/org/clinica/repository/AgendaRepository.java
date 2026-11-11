@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.clinica.entity.BloqueoAgenda;
 import org.clinica.entity.Horario;
 import org.clinica.entity.VistaAgendaDisponibilidad;
+import org.clinica.dto.agenda.AgendaDtos.CitaAdministrativa;
 
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -17,6 +18,65 @@ import jakarta.persistence.TypedQuery;
 /** Horarios semanales, bloqueos y consulta de cupos sobre {@code v_agenda_disponibilidad}. */
 @ApplicationScoped
 public class AgendaRepository implements PanacheRepositoryBase<Horario, String> {
+
+    public void bloquearMedico(String codMed) {
+        getEntityManager().createNativeQuery("SELECT 1 FROM public.bloquear_agenda_medico(:med)")
+                .setParameter("med", codMed).getSingleResult();
+    }
+
+    public String insertarHorario(Horario horario) {
+        return (String) getEntityManager().createNativeQuery("""
+                INSERT INTO public.horarios (cod_med,dia_semana,hora_inicio,hora_fin,pausa_inicio,pausa_fin)
+                VALUES (:med,:dia,:inicio,:fin,CAST(:pausaInicio AS time),CAST(:pausaFin AS time)) RETURNING cod_hor
+                """).setParameter("med", horario.codMed).setParameter("dia", horario.diaSemana)
+                .setParameter("inicio", horario.horaInicio).setParameter("fin", horario.horaFin)
+                .setParameter("pausaInicio", horario.pausaInicio).setParameter("pausaFin", horario.pausaFin).getSingleResult();
+    }
+
+    public String insertarBloqueo(BloqueoAgenda bloqueo) {
+        return (String) getEntityManager().createNativeQuery("""
+                INSERT INTO public.bloqueos_agenda (cod_med,cod_usu_admin,fecha_bloqueo,hora_inicio,hora_fin,motivo)
+                VALUES (:med,:actor,:fecha,CAST(:inicio AS time),CAST(:fin AS time),:motivo) RETURNING cod_blo
+                """).setParameter("med", bloqueo.codMed).setParameter("actor", bloqueo.codUsuAdmin)
+                .setParameter("fecha", bloqueo.fechaBloqueo).setParameter("inicio", bloqueo.horaInicio)
+                .setParameter("fin", bloqueo.horaFin).setParameter("motivo", bloqueo.motivo).getSingleResult();
+    }
+
+    public long contarCitasAfectadas(String codBlo) {
+        return ((Number) getEntityManager().createNativeQuery(
+                "SELECT count(*) FROM public.bloqueos_citas_afectadas WHERE cod_blo = :blo")
+                .setParameter("blo", codBlo).getSingleResult()).longValue();
+    }
+
+    public List<CitaAdministrativa> citasAfectadas(String codBlo) {
+        @SuppressWarnings("unchecked")
+        List<String> codigos = getEntityManager().createNativeQuery(
+                "SELECT cod_cit FROM public.bloqueos_citas_afectadas WHERE cod_blo = :blo")
+                .setParameter("blo", codBlo).getResultList();
+        if (codigos.isEmpty()) return List.of();
+        return getEntityManager().createQuery("""
+                SELECT c.codCit,c.codPac,c.codMed,c.codEsp,c.fecha,c.horaInicio,c.horaFin,c.estado
+                FROM Cita c WHERE c.codCit IN :codigos ORDER BY c.fecha,c.horaInicio,c.codCit
+                """, CitaAdministrativa.class).setParameter("codigos", codigos).getResultList();
+    }
+
+    public List<BloqueoAgenda> buscarBloqueos(String codMed, LocalDate desde, LocalDate hasta) {
+        StringBuilder jpql = new StringBuilder("FROM BloqueoAgenda WHERE codMed = :med");
+        Map<String, Object> filtros = new HashMap<>();
+        filtros.put("med", codMed);
+        if (desde != null) {
+            jpql.append(" AND fechaBloqueo >= :desde");
+            filtros.put("desde", desde);
+        }
+        if (hasta != null) {
+            jpql.append(" AND fechaBloqueo <= :hasta");
+            filtros.put("hasta", hasta);
+        }
+        jpql.append(" ORDER BY fechaBloqueo DESC,horaInicio,codBlo");
+        var consulta = getEntityManager().createQuery(jpql.toString(), BloqueoAgenda.class);
+        filtros.forEach(consulta::setParameter);
+        return consulta.getResultList();
+    }
 
     // ----- Horarios -----
 
