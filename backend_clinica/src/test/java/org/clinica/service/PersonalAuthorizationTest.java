@@ -1,6 +1,5 @@
 package org.clinica.service;
 
-import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -14,6 +13,7 @@ import jakarta.persistence.PersistenceException;
 import org.clinica.config.TriggerExceptionMapper;
 import org.clinica.dto.personal.CrearMedicoDTO;
 import org.clinica.entity.Bitacora;
+import org.clinica.service.PersonalTestFixtures.Account;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
@@ -31,11 +31,15 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.not;
+import static org.clinica.service.PersonalTestFixtures.AUTH;
+import static org.clinica.service.PersonalTestFixtures.PERSONAL;
+import static org.clinica.service.PersonalTestFixtures.authenticated;
+import static org.clinica.service.PersonalTestFixtures.json;
+import static org.clinica.service.PersonalTestFixtures.login;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -45,8 +49,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @Execution(ExecutionMode.SAME_THREAD)
 class PersonalAuthorizationTest {
 
-    private static final String AUTH = "/api/v1/auth";
-    private static final String PERSONAL = "/api/v1/personal";
     private static final String MEDICOS = PERSONAL + "/medicos";
     @Inject EntityManager em;
     @Inject PersonalService personalService;
@@ -191,6 +193,26 @@ class PersonalAuthorizationTest {
     }
 
     @Test
+    void doctorPasswordChangeAndInactivationRevokeSessions() {
+        String adminToken = login(createUser("ROL004"), "ROL004");
+        var doctor = doctorData(createSpecialty());
+        var created = authenticated(adminToken).body(doctor).post(MEDICOS).then().statusCode(201).extract().jsonPath();
+        String codUsu = created.getString("codUsu");
+        String path = MEDICOS + "/" + created.getString("codMed");
+        String initialToken = login(new Account(codUsu, doctor.email, doctor.password), "ROL003");
+
+        doctor.password = UUID.randomUUID().toString();
+        authenticated(adminToken).body(doctor).put(path).then().statusCode(200);
+        authenticated(initialToken).get(AUTH + "/me").then().statusCode(401)
+                .body("error.code", equalTo("INVALID_SESSION"));
+        String newToken = login(new Account(codUsu, doctor.email, doctor.password), "ROL003");
+
+        authenticated(adminToken).body(Map.of("estado", "Inactivo")).put(path + "/estado").then().statusCode(200);
+        authenticated(newToken).get(AUTH + "/me").then().statusCode(401)
+                .body("error.code", equalTo("INVALID_SESSION"));
+    }
+
+    @Test
     void auditFailureRollsBackWriteAndDoesNotExposeDatabaseDetails() {
         CrearMedicoDTO doctor = doctorData(createSpecialty());
         String nonexistentActor = UUID.randomUUID().toString();
@@ -229,39 +251,11 @@ class PersonalAuthorizationTest {
     }
 
     private Account createUser(String role) {
-        String suffix = UUID.randomUUID().toString();
-        String email = suffix + "@example.test";
-        String password = UUID.randomUUID().toString();
-        String id = QuarkusTransaction.requiringNew().call(() -> {
-            String userId = (String) em.createNativeQuery("""
-                    INSERT INTO public.usuarios (nombre_completo, email, password_hash, cod_rol)
-                    VALUES ('Usuario RBAC', :email, :hash, :role) RETURNING cod_usu
-                    """).setParameter("email", email).setParameter("hash", BcryptUtil.bcryptHash(password))
-                    .setParameter("role", role).getSingleResult();
-            switch (role) {
-                case "ROL001" -> em.createNativeQuery("""
-                        INSERT INTO public.pacientes (cod_usu, ci, fecha_nacimiento, telefono,
-                            ciudad_residencia, email_verificado)
-                        VALUES (:id, :ci, DATE '1990-01-01', '+59170000001', 'La Paz', true)
-                        """).setParameter("id", userId).setParameter("ci", suffix.substring(0, 18)).executeUpdate();
-                case "ROL002" -> em.createNativeQuery("INSERT INTO public.secretarias (cod_usu) VALUES (:id)")
-                        .setParameter("id", userId).executeUpdate();
-                case "ROL003" -> em.createNativeQuery("""
-                        INSERT INTO public.medicos (cod_usu, matricula_profesional) VALUES (:id, :matricula)
-                        """).setParameter("id", userId).setParameter("matricula", suffix).executeUpdate();
-                case "ROL004" -> { }
-                default -> throw new IllegalArgumentException("Rol de prueba no reconocido: " + role);
-            }
-            return userId;
-        });
-        return new Account(id, email, password);
+        return PersonalTestFixtures.createUser(em, role);
     }
 
     private String createSpecialty() {
-        return QuarkusTransaction.requiringNew().call(() -> (String) em.createNativeQuery("""
-                INSERT INTO public.especialidades (nombre_especialidad, duracion_consulta_min)
-                VALUES (:name, 30) RETURNING cod_esp
-                """).setParameter("name", "Especialidad RBAC " + UUID.randomUUID()).getSingleResult());
+        return PersonalTestFixtures.createSpecialty(em);
     }
 
     private static CrearMedicoDTO doctorData(String specialty) {
@@ -275,27 +269,9 @@ class PersonalAuthorizationTest {
         return doctor;
     }
 
-    private static String login(Account account, String role) {
-        return json().body(Map.of("email", account.email(), "password", account.password()))
-                .post(AUTH + "/login").then().statusCode(200)
-                .body("data.user.role.code", equalTo(role))
-                .body("data.session.tokenType", equalTo("Bearer"))
-                .extract().path("data.session.accessToken");
-    }
-
-    private static RequestSpecification json() {
-        return given().contentType("application/json").accept("application/json");
-    }
-
-    private static RequestSpecification authenticated(String token) {
-        return json().header("Authorization", "Bearer " + token);
-    }
-
     private static RequestSpecification withSpoofedActor(String token, String id) {
         return authenticated(token).header("X-Actor-Cod-Usu", id).header("X-Actor-Rol", "ROL002");
     }
-
-    private record Account(String id, String email, String password) { }
 
     public static class Profile implements QuarkusTestProfile {
         @Override

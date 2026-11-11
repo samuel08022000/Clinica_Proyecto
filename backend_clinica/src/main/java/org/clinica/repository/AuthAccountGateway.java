@@ -3,6 +3,7 @@ package org.clinica.repository;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
 import org.clinica.entity.Medico;
 import org.clinica.entity.Paciente;
 import org.clinica.entity.Rol;
@@ -34,6 +35,12 @@ public class AuthAccountGateway {
 
     public Optional<AuthAccount> findById(String codUsu) {
         return usuarioRepository.findByIdOptional(codUsu).map(this::toAccount);
+    }
+
+    /** Lee en un contexto de persistencia nuevo después de verificar las credenciales. */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public Optional<AuthAccount> findCurrentById(String codUsu) {
+        return findById(codUsu);
     }
 
     private AuthAccount toAccount(Usuario usuario) {

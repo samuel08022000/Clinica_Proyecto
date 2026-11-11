@@ -3,6 +3,9 @@ package org.clinica.service;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Status;
+import jakarta.transaction.Synchronization;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 import org.clinica.dto.AuthDtos.LoginData;
 import org.clinica.dto.AuthDtos.MeData;
 import org.clinica.dto.AuthDtos.RoleResponse;
@@ -15,7 +18,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 @ApplicationScoped
 public class AuthService {
@@ -31,6 +36,10 @@ public class AuthService {
     private final AuthSessionStore sessionStore;
     private final LoginAttemptGuard attemptGuard;
     private final String dummyHash;
+    private final Object[] sessionLocks = IntStream.range(0, 64).mapToObj(i -> new Object()).toArray();
+
+    @Inject
+    TransactionSynchronizationRegistry transactions;
 
     @Inject
     public AuthService(
@@ -67,8 +76,12 @@ public class AuthService {
         }
 
         validateAccount(account);
+        LoginData login = switch (account.roleCode()) {
+            case "ROL002", "ROL003" -> issueStaffSession(account, normalizedEmail);
+            default -> issueSession(account);
+        };
         attemptGuard.recordSuccess(normalizedEmail, remoteAddress);
-        return issueSession(account);
+        return login;
     }
 
     /** Emite la sesion interna solo despues de que un proveedor confiable valido la identidad. */
@@ -80,7 +93,24 @@ public class AuthService {
     }
 
     public void revokeAllForUser(String userId) {
-        sessionStore.revokeAllForUser(userId);
+        synchronized (sessionLock(userId)) {
+            sessionStore.revokeAllForUser(userId);
+        }
+    }
+
+    public void revokeAllForUserAfterCommit(String userId) {
+        transactions.registerInterposedSynchronization(new Synchronization() {
+            @Override
+            public void beforeCompletion() {
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status == Status.STATUS_COMMITTED) {
+                    revokeAllForUser(userId);
+                }
+            }
+        });
     }
 
     public MeData me(String rawToken) {
@@ -113,6 +143,25 @@ public class AuthService {
     public boolean logout(String rawToken) {
         authenticatedSession(rawToken);
         return sessionStore.revoke(rawToken);
+    }
+
+    private LoginData issueStaffSession(AuthAccount verified, String email) {
+        // Coordina la emisión con la revocación administrativa, incluso si BCrypt se ejecutó antes del commit.
+        synchronized (sessionLock(verified.id())) {
+            AuthAccount current = accountGateway.findCurrentById(verified.id())
+                    .orElseThrow(() -> new AuthException(401, "INVALID_CREDENTIALS", INVALID_CREDENTIALS));
+            if (!Objects.equals(verified.passwordHash(), current.passwordHash())
+                    || !verified.roleCode().equals(current.roleCode())
+                    || !email.equals(normalizeEmail(current.email()))) {
+                throw new AuthException(401, "INVALID_CREDENTIALS", INVALID_CREDENTIALS);
+            }
+            validateAccount(current);
+            return issueSession(current);
+        }
+    }
+
+    private Object sessionLock(String userId) {
+        return sessionLocks[Math.floorMod(userId.hashCode(), sessionLocks.length)];
     }
 
     private LoginData issueSession(AuthAccount account) {

@@ -101,6 +101,19 @@ class AuthServiceTest {
     }
 
     @Test
+    void staffLoginRejectsCredentialsChangedWhileItWasVerifyingPassword() {
+        String id = "USU000006";
+        String email = "secretaria@clinica.bo";
+        gateway.put(account(id, email, "ROL002", "Secretario", "Activo", "Activo", true, "Activo", null));
+        gateway.byId.put(id, account(id, email, "ROL002", "Secretario", "Activo", "Activo", true, "Activo", null));
+
+        AuthException error = assertThrows(AuthException.class, () -> service.login(email, PASSWORD, "127.0.0.1"));
+
+        assertEquals(401, error.status());
+        assertEquals("INVALID_CREDENTIALS", error.code());
+    }
+
+    @Test
     void temporarilyBlockedPatientIsRejected() {
         gateway.put(account("USU000003", "bloqueado@clinica.bo", "ROL001", "Paciente",
                 "Activo", "Activo", true, "Bloqueado_Temporal",

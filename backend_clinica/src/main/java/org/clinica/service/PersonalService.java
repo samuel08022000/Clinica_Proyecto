@@ -50,16 +50,14 @@ public class PersonalService {
     @Inject EntityManager em;
     @Inject UsuarioRepository usuarioRepo;
     @Inject EspecialidadRepository especialidadRepo;
+    @Inject AuthService authService;
 
     // =====================================================================
     // Consultas
     // =====================================================================
 
     public List<MedicoRespuestaDTO> listar(String estado) {
-        String filtro = (estado == null || estado.isBlank()) ? null : estado.trim();
-        if (filtro != null && !filtro.equals("Activo") && !filtro.equals("Inactivo")) {
-            throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El filtro de estado debe ser Activo o Inactivo.");
-        }
+        String filtro = validarFiltroEstado(estado);
         String sql = SELECT_MEDICOS + (filtro != null ? " WHERE m.estado = :estado" : "") + " ORDER BY m.cod_med";
         Query q = em.createNativeQuery(sql);
         if (filtro != null) {
@@ -109,16 +107,7 @@ public class PersonalService {
         verificarUnicos(email, ci, matricula, null, null);
 
         // 1. Usuario con rol Doctor
-        Query qUsu = em.createNativeQuery("""
-                INSERT INTO public.usuarios (nombre_completo, email, password_hash, cod_rol, estado)
-                VALUES (:nombre, :email, :hash, :rol, 'Activo')
-                RETURNING cod_usu
-                """);
-        qUsu.setParameter("nombre", nombre);
-        qUsu.setParameter("email", email);
-        qUsu.setParameter("hash", BcryptUtil.bcryptHash(dto.password));
-        qUsu.setParameter("rol", ROL_DOCTOR);
-        String codUsu = (String) qUsu.getSingleResult();
+        String codUsu = usuarioRepo.insertarPersonal(nombre, email, BcryptUtil.bcryptHash(dto.password), ROL_DOCTOR);
 
         // 2. Perfil médico
         Query qMed = em.createNativeQuery("""
@@ -173,6 +162,9 @@ public class PersonalService {
         qUsu.setParameter("hash", cambiaPassword ? BcryptUtil.bcryptHash(dto.password) : "");
         qUsu.setParameter("usu", actual.codUsu());
         qUsu.executeUpdate();
+        if (cambiaPassword) {
+            authService.revokeAllForUserAfterCommit(actual.codUsu());
+        }
 
         // Perfil médico
         Query qMed = em.createNativeQuery("""
@@ -231,9 +223,7 @@ public class PersonalService {
     @Transactional
     public MedicoRespuestaDTO cambiarEstado(String codMed, String estado, String codUsuAdmin) {
         actorHelper.fijarActor(codUsuAdmin);
-        if (!"Activo".equals(estado) && !"Inactivo".equals(estado)) {
-            throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El estado debe ser Activo o Inactivo.");
-        }
+        validarEstado(estado);
         MedicoRespuestaDTO actual = obtener(codMed);
 
         Query qMed = em.createNativeQuery("UPDATE public.medicos SET estado = :est WHERE cod_med = :med");
@@ -245,6 +235,9 @@ public class PersonalService {
         qUsu.setParameter("est", estado);
         qUsu.setParameter("usu", actual.codUsu());
         qUsu.executeUpdate();
+        if ("Inactivo".equals(estado)) {
+            authService.revokeAllForUserAfterCommit(actual.codUsu());
+        }
 
         return obtener(codMed);
     }
@@ -275,13 +268,31 @@ public class PersonalService {
         q.executeUpdate();
     }
 
-    private void validarDatos(String nombre, String email, String ci, String matricula, Short duracion) {
+    static void validarNombreYCorreo(String nombre, String email) {
         if (nombre == null || nombre.length() < 3 || nombre.length() > 150) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El nombre completo debe tener entre 3 y 150 caracteres.");
         }
         if (email == null || email.length() > 254 || !EMAIL.matcher(email).matches()) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El correo electrónico no es válido.");
         }
+    }
+
+    static String validarFiltroEstado(String estado) {
+        String filtro = vacioANull(estado);
+        if (filtro != null && !"Activo".equals(filtro) && !"Inactivo".equals(filtro)) {
+            throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El filtro de estado debe ser Activo o Inactivo.");
+        }
+        return filtro;
+    }
+
+    static void validarEstado(String estado) {
+        if (!"Activo".equals(estado) && !"Inactivo".equals(estado)) {
+            throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El estado debe ser Activo o Inactivo.");
+        }
+    }
+
+    private void validarDatos(String nombre, String email, String ci, String matricula, Short duracion) {
+        validarNombreYCorreo(nombre, email);
         if (matricula == null || matricula.isEmpty() || matricula.length() > 80) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La matrícula profesional es obligatoria (máximo 80 caracteres).");
         }
@@ -382,7 +393,7 @@ public class PersonalService {
         return s == null ? null : s.trim();
     }
 
-    private static String vacioANull(String s) {
+    static String vacioANull(String s) {
         return (s == null || s.isBlank()) ? null : s.trim();
     }
 }
