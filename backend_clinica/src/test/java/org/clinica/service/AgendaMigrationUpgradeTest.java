@@ -6,16 +6,18 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.UUID;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @QuarkusTest
 class AgendaMigrationUpgradeTest {
@@ -23,8 +25,9 @@ class AgendaMigrationUpgradeTest {
     @ConfigProperty(name = "quarkus.datasource.username") String username;
     @ConfigProperty(name = "quarkus.datasource.password") Optional<String> configuredPassword;
 
-    @Test
-    void upgradesExistingAppointmentsAndBlocksWithoutInferringAnUnknownHistoricalCause() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"4", "5"})
+    void upgradesExistingAppointmentsAndBlocksFromPreviousVersions(String previousVersion) throws Exception {
         String password = configuredPassword.orElse("");
         String database = "clinica_upgrade_" + UUID.randomUUID().toString().replace("-", "");
         String jdbcUrl;
@@ -36,7 +39,7 @@ class AgendaMigrationUpgradeTest {
             statement.execute("CREATE DATABASE " + database);
         }
         Flyway.configure().dataSource(jdbcUrl, username, password).locations("classpath:db/migration")
-                .target("4").load().migrate();
+                .target(previousVersion).load().migrate();
         String suffix = UUID.randomUUID().toString();
         String hash = BcryptUtil.bcryptHash(suffix);
         String legacyBlock;
@@ -70,9 +73,13 @@ class AgendaMigrationUpgradeTest {
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertEquals("Afectada/Pendiente Reprogramación", scalar(connection, "SELECT estado FROM public.citas WHERE cod_cit=?", appointment));
             assertEquals("08:30:00", scalar(connection, "SELECT hora_fin::text FROM public.slots_agenda WHERE cod_slot=?", slot));
-            assertFalse(Boolean.parseBoolean(scalar(connection, "SELECT trazabilidad_completa::text FROM public.bloqueos_agenda WHERE cod_blo=?", legacyBlock)));
-            assertEquals("0", scalar(connection, "SELECT count(*)::text FROM public.bloqueos_citas_afectadas WHERE cod_blo=?", legacyBlock));
+            assertEquals("5".equals(previousVersion), Boolean.parseBoolean(scalar(connection,
+                    "SELECT trazabilidad_completa::text FROM public.bloqueos_agenda WHERE cod_blo=?", legacyBlock)));
+            assertEquals("5".equals(previousVersion) ? "1" : "0", scalar(connection,
+                    "SELECT count(*)::text FROM public.bloqueos_citas_afectadas WHERE cod_blo=?", legacyBlock));
             assertTrue(Integer.parseInt(scalar(connection, "SELECT count(*)::text FROM public.bitacora WHERE nombre_tabla='citas' AND clave_registro=?", appointment)) > 0);
+            assertEquals("P4030", assertThrows(SQLException.class, () -> scalar(connection,
+                    "SELECT public.reservar_cita('PAC999999','SLT99999999','USU999999','Ventanilla',NULL)")).getSQLState());
         }
     }
 

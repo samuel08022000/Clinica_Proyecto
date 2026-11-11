@@ -1,7 +1,6 @@
 package org.clinica.repository;
 
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
-import io.quarkus.panache.common.Parameters;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.clinica.entity.BloqueoAgenda;
@@ -105,22 +104,36 @@ public class AgendaRepository implements PanacheRepositoryBase<Horario, String> 
      * se ignora (p. ej. sólo {@code codEsp} para ver todos los médicos de una especialidad).
      */
     public List<VistaAgendaDisponibilidad> buscarCuposDisponibles(String codEsp, String codMed, LocalDate fecha) {
-        StringBuilder query = new StringBuilder("estadoDisponibilidad = 'Disponible'");
-        Parameters params = new Parameters();
+        return buscarCuposDisponibles(codEsp,codMed,fecha,null);
+    }
+
+    public List<VistaAgendaDisponibilidad> buscarCuposDisponibles(String codEsp, String codMed, LocalDate fecha, String codPac) {
+        StringBuilder query = new StringBuilder("FROM VistaAgendaDisponibilidad v WHERE v.estadoDisponibilidad = 'Disponible'");
+        Map<String,Object> params = new HashMap<>();
         if (codEsp != null && !codEsp.isBlank()) {
-            query.append(" and codEsp = :codEsp");
-            params.and("codEsp", codEsp);
+            query.append(" AND v.codEsp = :codEsp");
+            params.put("codEsp", codEsp);
         }
         if (codMed != null && !codMed.isBlank()) {
-            query.append(" and codMed = :codMed");
-            params.and("codMed", codMed);
+            query.append(" AND v.codMed = :codMed");
+            params.put("codMed", codMed);
         }
         if (fecha != null) {
-            query.append(" and fecha = :fecha");
-            params.and("fecha", fecha);
+            query.append(" AND v.fecha = :fecha");
+            params.put("fecha", fecha);
         }
-        return VistaAgendaDisponibilidad.list(query.toString(),
-                Sort.by("fecha").and("horaInicio").and("nombreMedico"), params.map());
+        if (codPac != null) {
+            query.append("""
+                     AND NOT EXISTS (SELECT 1 FROM Cita c WHERE c.codPac=:pac
+                        AND c.estado NOT IN ('Cancelada','Reprogramada') AND c.fecha=v.fecha
+                        AND c.horaInicio<v.horaFin AND c.horaFin>v.horaInicio)
+                    """);
+            params.put("pac",codPac);
+        }
+        query.append(" ORDER BY v.fecha,v.horaInicio,v.nombreMedico");
+        var consulta=getEntityManager().createQuery(query.toString(),VistaAgendaDisponibilidad.class);
+        params.forEach(consulta::setParameter);
+        return consulta.getResultList();
     }
 
     /** Fechas (D..D+14) que tienen al menos un cupo disponible, útil para pintar el calendario. */

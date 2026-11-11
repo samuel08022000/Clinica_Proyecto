@@ -34,6 +34,16 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4030".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "RESERVA_NO_AUTORIZADA",
+                        "El usuario o paciente no está habilitado para esta reserva.");
+            }
+            if ("P4040".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe el recurso de la reserva.");
+            }
+            if ("P4000".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "El turno debe ser futuro y estar entre hoy y D+14.");
+            }
             if ("P4090".equals(psql.getSQLState()) && psql.getServerErrorMessage() != null) {
                 return json(Response.Status.CONFLICT, "CONFLICTO_AGENDA", psql.getServerErrorMessage().getMessage());
             }
