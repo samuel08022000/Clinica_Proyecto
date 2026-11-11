@@ -16,12 +16,16 @@ import jakarta.ws.rs.core.Response;
 import org.clinica.dto.personal.ActualizarMedicoDTO;
 import org.clinica.dto.personal.CambiarEstadoDTO;
 import org.clinica.dto.personal.CrearMedicoDTO;
-import org.clinica.dto.personal.EspecialidadOpcionDTO;
+import org.clinica.dto.personal.EspecialidadDetalleDTO;
+import org.clinica.dto.personal.EspecialidadDetalleDTO.MedicoVinculado;
+import org.clinica.dto.personal.EspecialidadSolicitudes;
 import org.clinica.dto.personal.MedicoRespuestaDTO;
 import org.clinica.dto.personal.SecretariaRespuestaDTO;
 import org.clinica.dto.personal.SecretariaSolicitudes;
+import org.clinica.dto.personal.SolicitudConCamposPermitidos;
 import org.clinica.service.AuthException;
 import org.clinica.service.AuthService;
+import org.clinica.service.EspecialidadService;
 import org.clinica.service.PersonalService;
 import org.clinica.service.SecretariaService;
 
@@ -45,6 +49,9 @@ public class PersonalController {
     SecretariaService secretariaService;
 
     @Inject
+    EspecialidadService especialidadService;
+
+    @Inject
     AuthService authService;
 
     @GET
@@ -65,10 +72,56 @@ public class PersonalController {
 
     @GET
     @Path("/especialidades")
-    public List<EspecialidadOpcionDTO> especialidadesActivas(
+    public Response listarEspecialidades(@QueryParam("estado") String estado,
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         exigirAdmin(authorization);
-        return service.listarEspecialidadesActivas();
+        if (estado == null || estado.isBlank()) {
+            return Response.ok(service.listarEspecialidadesActivas()).build();
+        }
+        return Response.ok(especialidadService.listar(estado)).build();
+    }
+
+    @GET
+    @Path("/especialidades/{codEsp}")
+    public EspecialidadDetalleDTO obtenerEspecialidad(@PathParam("codEsp") String codEsp,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirAdmin(authorization);
+        return especialidadService.obtener(codEsp);
+    }
+
+    @POST
+    @Path("/especialidades")
+    public Response crearEspecialidad(EspecialidadSolicitudes.Crear dto,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
+        exigirSolicitud(dto);
+        return Response.status(Response.Status.CREATED).entity(especialidadService.registrar(dto, actor)).build();
+    }
+
+    @PUT
+    @Path("/especialidades/{codEsp}")
+    public EspecialidadDetalleDTO actualizarEspecialidad(@PathParam("codEsp") String codEsp,
+            EspecialidadSolicitudes.Actualizar dto, @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
+        exigirSolicitud(dto);
+        return especialidadService.actualizar(codEsp, dto, actor);
+    }
+
+    @PUT
+    @Path("/especialidades/{codEsp}/estado")
+    public EspecialidadDetalleDTO cambiarEstadoEspecialidad(@PathParam("codEsp") String codEsp,
+            CambiarEstadoDTO dto, @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        String actor = exigirAdmin(authorization);
+        exigirSolicitud(dto);
+        return especialidadService.cambiarEstado(codEsp, dto.estado, actor);
+    }
+
+    @GET
+    @Path("/especialidades/{codEsp}/medicos")
+    public List<MedicoVinculado> listarMedicosVinculados(@PathParam("codEsp") String codEsp,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirAdmin(authorization);
+        return especialidadService.listarMedicos(codEsp);
     }
 
     @POST
@@ -122,7 +175,7 @@ public class PersonalController {
     public Response crearSecretaria(SecretariaSolicitudes.Crear dto,
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         String actor = exigirAdmin(authorization);
-        exigirSolicitudSecretaria(dto);
+        exigirSolicitud(dto);
         return Response.status(Response.Status.CREATED).entity(secretariaService.registrar(dto, actor)).build();
     }
 
@@ -131,7 +184,7 @@ public class PersonalController {
     public SecretariaRespuestaDTO actualizarSecretaria(@PathParam("codSec") String codSec,
             SecretariaSolicitudes.Actualizar dto, @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         String actor = exigirAdmin(authorization);
-        exigirSolicitudSecretaria(dto);
+        exigirSolicitud(dto);
         return secretariaService.actualizar(codSec, dto, actor);
     }
 
@@ -140,7 +193,7 @@ public class PersonalController {
     public SecretariaRespuestaDTO cambiarEstadoSecretaria(@PathParam("codSec") String codSec,
             SecretariaSolicitudes.CambiarEstado dto, @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         String actor = exigirAdmin(authorization);
-        exigirSolicitudSecretaria(dto);
+        exigirSolicitud(dto);
         return secretariaService.cambiarEstado(codSec, dto.estado, actor);
     }
 
@@ -150,7 +203,7 @@ public class PersonalController {
             SecretariaSolicitudes.RestablecerPassword dto,
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         String actor = exigirAdmin(authorization);
-        exigirSolicitudSecretaria(dto);
+        exigirSolicitud(dto);
         secretariaService.restablecerPassword(codSec, dto.password, actor);
         return Response.noContent().build();
     }
@@ -168,7 +221,7 @@ public class PersonalController {
         }
     }
 
-    private static void exigirSolicitudSecretaria(SecretariaSolicitudes.Solicitud dto) {
+    private static void exigirSolicitud(SolicitudConCamposPermitidos dto) {
         exigirCuerpo(dto);
         if (dto.tieneCamposNoPermitidos()) {
             throw PersonalService.error(Response.Status.BAD_REQUEST, "VALIDACION",

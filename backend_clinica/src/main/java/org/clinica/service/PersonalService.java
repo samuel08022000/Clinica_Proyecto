@@ -103,7 +103,7 @@ public class PersonalService {
         if (dto.password == null || dto.password.length() < 8) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La contraseña debe tener al menos 8 caracteres.");
         }
-        Set<String> especialidades = validarEspecialidades(dto.codigosEspecialidades);
+        Set<String> especialidades = validarEspecialidades(dto.codigosEspecialidades, Set.of());
         verificarUnicos(email, ci, matricula, null, null);
 
         // 1. Usuario con rol Doctor
@@ -145,7 +145,14 @@ public class PersonalService {
         if (cambiaPassword && dto.password.length() < 8) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La contraseña debe tener al menos 8 caracteres.");
         }
-        Set<String> especialidades = dto.codigosEspecialidades == null ? null : validarEspecialidades(dto.codigosEspecialidades);
+        Set<String> vigentes = new LinkedHashSet<>();
+        for (EspecialidadVinculoDTO vinculo : actual.especialidades()) {
+            if ("Activo".equals(vinculo.estado())) {
+                vigentes.add(vinculo.codEsp());
+            }
+        }
+        Set<String> especialidades = dto.codigosEspecialidades == null ? null
+                : validarEspecialidades(dto.codigosEspecialidades, vigentes);
         verificarUnicos(email, ci, matricula, actual.codUsu(), codMed);
 
         // Usuario
@@ -195,10 +202,6 @@ public class PersonalService {
 
         // Sincroniza especialidades: las nuevas se activan, las quitadas se inactivan (no se borran)
         if (especialidades != null) {
-            Set<String> vigentes = new LinkedHashSet<>();
-            for (EspecialidadVinculoDTO v : actual.especialidades()) {
-                if ("Activo".equals(v.estado())) vigentes.add(v.codEsp());
-            }
             for (String codEsp : especialidades) {
                 if (!vigentes.contains(codEsp)) {
                     upsertVinculo(codMed, codEsp, dto.duracionConsultaMin);
@@ -299,12 +302,16 @@ public class PersonalService {
         if (ci != null && ci.length() > 30) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "El CI no puede superar 30 caracteres.");
         }
+        validarDuracion(duracion);
+    }
+
+    static void validarDuracion(Short duracion) {
         if (duracion != null && !DURACIONES.contains(duracion)) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La duración de consulta debe ser 20, 30, 45 o 60 minutos.");
         }
     }
 
-    private Set<String> validarEspecialidades(List<String> codigos) {
+    private Set<String> validarEspecialidades(List<String> codigos, Set<String> vinculosVigentes) {
         if (codigos == null || codigos.isEmpty()) {
             throw error(Response.Status.BAD_REQUEST, "VALIDACION", "Debe seleccionar al menos una especialidad.");
         }
@@ -316,7 +323,7 @@ public class PersonalService {
             if (e == null) {
                 throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La especialidad " + cod + " no existe.");
             }
-            if (!"Activo".equals(e.estado)) {
+            if (!"Activo".equals(e.estado) && !vinculosVigentes.contains(cod)) {
                 throw error(Response.Status.BAD_REQUEST, "VALIDACION", "La especialidad " + e.nombreEspecialidad + " está inactiva.");
             }
             resultado.add(cod);

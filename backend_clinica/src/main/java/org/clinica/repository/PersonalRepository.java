@@ -3,6 +3,7 @@ package org.clinica.repository;
 import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.clinica.dto.personal.EspecialidadDetalleDTO.MedicoVinculado;
 import org.clinica.dto.personal.SecretariaRespuestaDTO;
 import org.clinica.entity.Medico;
 import org.clinica.entity.MedicoEspecialidad;
@@ -71,5 +72,16 @@ public class PersonalRepository implements PanacheRepositoryBase<Medico, String>
 
     public List<MedicoEspecialidad> listarEspecialidadesDeMedico(String codMed) {
         return MedicoEspecialidad.list("id.codMed", Sort.by("id.codEsp"), codMed);
+    }
+
+    public List<MedicoVinculado> listarVinculosPorEspecialidad(String codEsp) {
+        return getEntityManager().createQuery("""
+                SELECT m.codMed, u.nombreCompleto, m.estado, v.estado, v.duracionConsultaMin
+                FROM MedicoEspecialidad v
+                JOIN Medico m ON m.codMed = v.id.codMed
+                JOIN Usuario u ON u.codUsu = m.codUsu
+                WHERE v.id.codEsp = :codEsp
+                ORDER BY m.codMed
+                """, MedicoVinculado.class).setParameter("codEsp", codEsp).getResultList();
     }
 }
