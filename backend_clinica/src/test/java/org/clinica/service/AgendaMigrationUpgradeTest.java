@@ -26,7 +26,7 @@ class AgendaMigrationUpgradeTest {
     @ConfigProperty(name = "quarkus.datasource.password") Optional<String> configuredPassword;
 
     @ParameterizedTest
-    @ValueSource(strings = {"4", "5"})
+    @ValueSource(strings = {"4", "5", "6"})
     void upgradesExistingAppointmentsAndBlocksFromPreviousVersions(String previousVersion) throws Exception {
         String password = configuredPassword.orElse("");
         String database = "clinica_upgrade_" + UUID.randomUUID().toString().replace("-", "");
@@ -45,6 +45,7 @@ class AgendaMigrationUpgradeTest {
         String legacyBlock;
         String appointment;
         String slot;
+        String originalQr;
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             connection.setAutoCommit(false);
             String admin = user(connection, suffix + "a@example.test", hash, "ROL004");
@@ -67,17 +68,20 @@ class AgendaMigrationUpgradeTest {
                     INSERT INTO public.bloqueos_agenda(cod_med,cod_usu_admin,fecha_bloqueo,motivo)
                     SELECT ?,?,fecha,'Bloqueo anterior a V5' FROM public.slots_agenda WHERE cod_slot=? RETURNING cod_blo
                     """, doctor, admin, slot);
+            originalQr = scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", appointment);
             connection.commit();
         }
         Flyway.configure().dataSource(jdbcUrl, username, password).locations("classpath:db/migration").load().migrate();
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
             assertEquals("Afectada/Pendiente Reprogramación", scalar(connection, "SELECT estado FROM public.citas WHERE cod_cit=?", appointment));
             assertEquals("08:30:00", scalar(connection, "SELECT hora_fin::text FROM public.slots_agenda WHERE cod_slot=?", slot));
-            assertEquals("5".equals(previousVersion), Boolean.parseBoolean(scalar(connection,
+            assertEquals(!"4".equals(previousVersion), Boolean.parseBoolean(scalar(connection,
                     "SELECT trazabilidad_completa::text FROM public.bloqueos_agenda WHERE cod_blo=?", legacyBlock)));
-            assertEquals("5".equals(previousVersion) ? "1" : "0", scalar(connection,
+            assertEquals(!"4".equals(previousVersion) ? "1" : "0", scalar(connection,
                     "SELECT count(*)::text FROM public.bloqueos_citas_afectadas WHERE cod_blo=?", legacyBlock));
             assertTrue(Integer.parseInt(scalar(connection, "SELECT count(*)::text FROM public.bitacora WHERE nombre_tabla='citas' AND clave_registro=?", appointment)) > 0);
+            assertTrue(originalQr.equals(scalar(connection, "SELECT token_qr FROM public.citas WHERE cod_cit=?", appointment)), "La migración debe conservar el QR original");
+            assertEquals("1", scalar(connection, "SELECT count(*)::text FROM public.citas c CROSS JOIN LATERAL public.verificar_token_qr(c.token_qr) q WHERE c.cod_cit=? AND q.cod_cit=c.cod_cit AND q.fecha=c.fecha", appointment));
             assertEquals("P4030", assertThrows(SQLException.class, () -> scalar(connection,
                     "SELECT public.reservar_cita('PAC999999','SLT99999999','USU999999','Ventanilla',NULL)")).getSQLState());
         }

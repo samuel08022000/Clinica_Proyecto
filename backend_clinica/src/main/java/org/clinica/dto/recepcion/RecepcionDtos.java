@@ -1,6 +1,7 @@
 package org.clinica.dto.recepcion;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import org.clinica.dto.personal.SolicitudConCamposPermitidos;
 
 import java.time.LocalDate;
@@ -14,6 +15,24 @@ public final class RecepcionDtos {
     public static class NuevaCita extends SolicitudConCamposPermitidos {
         public String codPac;
         public String codSlot;
+    }
+
+    public static class CheckinSolicitud extends SolicitudConCamposPermitidos {
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+        public String tokenQr;
+    }
+
+    @RegisterForReflection
+    public record Acreditacion(String codCit, String nombrePaciente, LocalDate fecha, String estado,
+            boolean qrValido, boolean admiteCheckin) { }
+
+    @RegisterForReflection
+    public record Asistencia(String codCit, String nombrePaciente, LocalDate fecha, String estado,
+            OffsetDateTime horaLlegadaCheckin, String checkinPorUsu) {
+        @JsonProperty
+        public boolean checkinRegistrado() {
+            return horaLlegadaCheckin != null && checkinPorUsu != null;
+        }
     }
 
     public record PacienteResumen(String codPac, String nombreCompleto, String ci, String email, String estadoCuenta) { }

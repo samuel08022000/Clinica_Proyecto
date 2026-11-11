@@ -34,6 +34,22 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4001".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "QR_INVALIDO", "El código QR no es válido.");
+            }
+            if ("P4031".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "SECRETARIA_NO_HABILITADA", "El perfil de secretaría no está habilitado.");
+            }
+            if ("P4041".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "ACREDITACION_NO_ENCONTRADA", "No existe una cita asociada a esa acreditación.");
+            }
+            if ("P4091".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "CHECKIN_NO_PERMITIDO", "La cita no admite registro de llegada o ya fue acreditada.");
+            }
+            if ("P5001".equals(psql.getSQLState())) {
+                LOG.error("La verificación QR no está disponible.");
+                return json(Response.Status.INTERNAL_SERVER_ERROR, "ERROR_ACREDITACION", "No fue posible validar la acreditación.");
+            }
             if ("P4030".equals(psql.getSQLState())) {
                 return json(Response.Status.FORBIDDEN, "RESERVA_NO_AUTORIZADA",
                         "El usuario o paciente no está habilitado para esta reserva.");
