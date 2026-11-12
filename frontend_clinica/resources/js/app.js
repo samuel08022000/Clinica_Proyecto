@@ -1,3 +1,5 @@
+import './administracion';
+
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const errorSummary = document.querySelector('[data-error-summary]');
