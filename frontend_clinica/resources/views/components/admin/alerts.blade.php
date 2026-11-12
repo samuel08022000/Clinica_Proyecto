@@ -1,3 +1,5 @@
+@props(['validationErrors' => null])
+@php($errors = $validationErrors ?? $errors)
 @if(session('success'))<x-admin.notice type="success">{{ session('success') }}</x-admin.notice>@endif
 @if($errors->any())
     <x-admin.notice type="error" tabindex="-1" data-error-summary aria-labelledby="admin-error-title">

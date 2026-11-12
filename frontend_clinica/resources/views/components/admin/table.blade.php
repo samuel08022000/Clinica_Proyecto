@@ -1,6 +1,6 @@
-@props(['headings', 'caption'])
+@props(['headings', 'caption', 'scrollHint' => 'Desplaza la tabla horizontalmente para consultar todas las columnas.'])
 <div class="a-table-block">
-    <p class="a-table-hint">Desplaza la tabla horizontalmente para consultar todas las columnas.</p>
+    <p class="a-table-hint">{{ $scrollHint }}</p>
     <div class="a-table-region" role="region" aria-label="{{ $caption }}" tabindex="0">
         <table class="a-table">
             <caption class="sr-only">{{ $caption }}</caption>

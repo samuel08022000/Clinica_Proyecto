@@ -1,4 +1,5 @@
 import './administracion';
+import './secretaria';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 

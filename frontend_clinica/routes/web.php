@@ -10,7 +10,12 @@ use App\Http\Controllers\Administracion\SancionController;
 use App\Http\Controllers\Administracion\SecretariaController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\Secretaria\CheckinController;
+use App\Http\Controllers\Secretaria\CitaController;
+use App\Http\Controllers\Secretaria\HistorialController;
+use App\Http\Controllers\Secretaria\ReservaController;
 use App\Http\Middleware\AdministrativeResponses;
+use App\Http\Middleware\ReceptionResponses;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PortalController::class, 'index'])->name('home');
@@ -55,9 +60,30 @@ Route::controller(AuthController::class)->group(function (): void {
 
 Route::controller(AuthController::class)->group(function (): void {
     Route::get('/paciente/inicio', 'dashboard')->middleware('rol:ROL001')->name('paciente.home');
-    Route::get('/secretaria/inicio', 'dashboard')->middleware('rol:ROL002')->name('secretaria.home');
     Route::get('/medico/inicio', 'dashboard')->middleware('rol:ROL003')->name('medico.home');
 });
+
+Route::prefix('secretaria')->name('secretaria.')
+    ->middleware([ReceptionResponses::class, 'rol:ROL002'])
+    ->group(function (): void {
+        Route::get('/inicio', App\Http\Controllers\Secretaria\DashboardController::class)->name('home');
+        Route::get('/pacientes', [App\Http\Controllers\Secretaria\PacienteController::class, 'index'])->name('pacientes.index');
+        Route::get('/pacientes/{paciente}', [App\Http\Controllers\Secretaria\PacienteController::class, 'show'])->whereAlphaNumeric('paciente')->name('pacientes.show');
+        Route::get('/historial', [App\Http\Controllers\Secretaria\PacienteController::class, 'index'])->name('historial.index');
+        Route::get('/pacientes/{paciente}/historial', [HistorialController::class, 'show'])->whereAlphaNumeric('paciente')->name('historial.show');
+        Route::get('/reservas/nueva', [ReservaController::class, 'create'])->name('reservas.create');
+        Route::post('/reservas', [ReservaController::class, 'store'])->name('reservas.store');
+        Route::get('/citas', [CitaController::class, 'index'])->name('citas.index');
+        Route::get('/citas/{cita}', [CitaController::class, 'show'])->whereAlphaNumeric('cita')->name('citas.show');
+        Route::get('/checkin', [CheckinController::class, 'index'])->name('checkin.index');
+        Route::post('/checkin', [CheckinController::class, 'store'])->name('checkin.store');
+        Route::get('/citas/{cita}/asistencia', [CheckinController::class, 'attendance'])->whereAlphaNumeric('cita')->name('citas.asistencia');
+        Route::get('/citas/{cita}/acreditacion', [CheckinController::class, 'accreditation'])->whereAlphaNumeric('cita')->name('citas.acreditacion');
+        Route::get('/citas/{cita}/cancelar', [CitaController::class, 'cancel'])->whereAlphaNumeric('cita')->name('citas.cancelar');
+        Route::post('/citas/{cita}/cancelar', [CitaController::class, 'cancelStore'])->whereAlphaNumeric('cita')->name('citas.cancelar.store');
+        Route::get('/citas/{cita}/inasistencia', [CitaController::class, 'absence'])->whereAlphaNumeric('cita')->name('citas.inasistencia');
+        Route::post('/citas/{cita}/inasistencia', [CitaController::class, 'absenceStore'])->whereAlphaNumeric('cita')->name('citas.inasistencia.store');
+    });
 
 Route::prefix('administracion')->name('administracion.')
     ->middleware([AdministrativeResponses::class, 'rol:ROL004'])

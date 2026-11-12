@@ -61,7 +61,9 @@ class QuarkusApiClient
         try {
             $response = match ($method) {
                 'GET' => $this->get($endpoint, $data),
-                'POST' => $this->post($endpoint, $data),
+                'POST' => $data === []
+                    ? $this->client()->withBody('{}', 'application/json')->post($this->url($endpoint))
+                    : $this->post($endpoint, $data),
                 'PUT' => $this->put($endpoint, $data),
                 default => throw new \InvalidArgumentException('Método administrativo no permitido.'),
             };
@@ -87,7 +89,7 @@ class QuarkusApiClient
                 }
             }
             // Never propagate a credential reflected by an upstream error into a flash message.
-            foreach ([$data['password'] ?? null, session('auth_token')] as $secret) {
+            foreach ([$data['password'] ?? null, $data['tokenQr'] ?? null, session('auth_token')] as $secret) {
                 if (is_string($secret) && $secret !== '') {
                     $message = str_replace($secret, '[dato protegido]', $message);
                 }

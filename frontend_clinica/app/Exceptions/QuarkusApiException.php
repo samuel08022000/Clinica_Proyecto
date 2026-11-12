@@ -3,6 +3,7 @@
 namespace App\Exceptions;
 
 use App\Http\Middleware\AdministrativeResponses;
+use App\Http\Middleware\ReceptionResponses;
 use Illuminate\Contracts\Debug\ShouldntReport;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -17,6 +18,10 @@ class QuarkusApiException extends RuntimeException implements ShouldntReport
 
     public function render(Request $request): Response
     {
+        if ($request->routeIs('secretaria.*')) {
+            return ReceptionResponses::renderFailure($request, $this);
+        }
+
         return AdministrativeResponses::renderFailure($request, $this);
     }
 }

@@ -1,6 +1,8 @@
 @props(['name' => 'arrow'])
 <svg {{ $attributes->class('a-icon') }} viewBox="0 0 24 24" aria-hidden="true">
     @switch($name)
+        @case('qr') <path d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h3v3h3v3h-6zM12 3v3m0 6v3m6-3h3M3 12h3m6 9v-3"/> @break
+        @case('history') <path d="M3 12a9 9 0 1 0 3-6M3 3v5h5m4 0v5l3 2"/> @break
         @case('home') <path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/> @break
         @case('people') <path d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3m20 0v-3a4 4 0 0 0-3-3.87M12 3a4 4 0 1 1 0 8m7-7a4 4 0 0 1 0 7"/><circle cx="8" cy="7" r="4"/> @break
         @case('specialty') <path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/> @break
