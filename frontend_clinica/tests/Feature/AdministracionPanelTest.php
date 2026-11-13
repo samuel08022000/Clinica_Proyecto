@@ -12,6 +12,36 @@ use Tests\TestCase;
 
 class AdministracionPanelTest extends TestCase
 {
+    public static function blockReasonBoundaries(): array
+    {
+        return ['backend maximum' => [500, true], 'exceeds backend maximum' => [501, false]];
+    }
+
+    #[DataProvider('blockReasonBoundaries')]
+    public function test_block_reason_matches_the_real_backend_character_limit(int $length, bool $valid): void
+    {
+        $reason = str_repeat('á', $length);
+        $response = $this->admin()->from('/administracion/bloqueos/medicos/MED000001/crear')
+            ->post('/administracion/bloqueos/medicos/MED000001', [
+                'fechaBloqueo' => '2026-12-01', 'motivo' => $reason, 'confirmacion' => 1,
+            ]);
+
+        if ($valid) {
+            $response->assertSessionHasNoErrors()->assertRedirect('/administracion/bloqueos/BLO000001');
+            Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && $request['motivo'] === $reason);
+        } else {
+            $response->assertRedirect('/administracion/bloqueos/medicos/MED000001/crear')
+                ->assertSessionHasErrors('motivo')->assertSessionHasInput('motivo', $reason);
+            Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST');
+        }
+    }
+
+    public function test_block_form_advertises_the_real_backend_reason_limit(): void
+    {
+        $this->admin()->get('/administracion/bloqueos/medicos/MED000001/crear')
+            ->assertOk()->assertSee('maxlength="500"', false);
+    }
+
     private ?int $failureStatus = null;
 
     private string $failureMessage = 'La edición afecta citas futuras; conserva el horario actual.';

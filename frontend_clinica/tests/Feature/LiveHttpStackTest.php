@@ -43,6 +43,10 @@ class LiveHttpStackTest extends TestCase
         $this->assertSame(200, $http->get($home)->getStatusCode());
         $other = $role === 'ROL004' ? '/secretaria/inicio' : '/administracion/inicio';
         $this->assertSame(403, $http->get($other)->getStatusCode());
+        $otherWrite = $role === 'ROL004' ? '/secretaria/checkin' : '/administracion/medicos';
+        $this->assertSame(403, $http->post($otherWrite, ['form_params' => [
+            '_token' => $this->csrf($html), 'tokenQr' => 'unreachable-role-probe',
+        ]])->getStatusCode());
         $this->assertTrue(count(array_filter($cookies->toArray(), fn (array $cookie): bool => $cookie['HttpOnly'] ?? false)) > 0);
         $logout = $http->post('/logout', ['form_params' => ['_token' => $this->csrf($html)]]);
         $this->assertSame(302, $logout->getStatusCode());
@@ -71,10 +75,16 @@ class LiveHttpStackTest extends TestCase
         $faulty = new Client(['base_uri' => 'http://127.0.0.1:18092'] + $options);
         $csrf = $this->csrf((string) $healthy->get('/login')->getBody());
         $this->assertSame(302, $healthy->post('/login', ['form_params' => ['_token' => $csrf, 'email' => $user['email'], 'password' => $user['password']]])->getStatusCode());
-        $this->assertSame(200, $healthy->get('/secretaria/inicio')->getStatusCode());
+        $authorized = $healthy->get('/secretaria/inicio');
+        $this->assertSame(200, $authorized->getStatusCode());
         $unavailable = $faulty->get('/secretaria/inicio');
         $this->assertSame(503, $unavailable->getStatusCode());
         $this->assertSame('30', $unavailable->getHeaderLine('Retry-After'));
+        $blockedWrite = $faulty->post('/secretaria/checkin', ['form_params' => [
+            '_token' => $this->csrf((string) $authorized->getBody()), 'tokenQr' => 'unreachable-transport-probe',
+        ]]);
+        $this->assertSame(503, $blockedWrite->getStatusCode());
+        $this->assertSame('30', $blockedWrite->getHeaderLine('Retry-After'));
         $recovered = $healthy->get('/secretaria/inicio');
         $this->assertSame(200, $recovered->getStatusCode());
         $this->assertSame(302, $healthy->post('/logout', ['form_params' => ['_token' => $this->csrf((string) $recovered->getBody())]])->getStatusCode());

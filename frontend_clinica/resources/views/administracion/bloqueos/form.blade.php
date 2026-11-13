@@ -10,7 +10,7 @@
             <x-admin.field name="horaInicio" label="Hora de inicio" type="time" />
             <x-admin.field name="horaFin" label="Hora de fin" type="time" />
         </div></fieldset>
-        <x-admin.field name="motivo" label="Motivo" type="textarea" required maxlength="2000" />
+        <x-admin.field name="motivo" label="Motivo" type="textarea" required maxlength="500" help="Hasta 500 caracteres." />
         <x-admin.confirmation message="Confirmo el bloqueo y la revisión posterior de las citas afectadas." />
         <div class="a-actions"><x-admin.button>Registrar bloqueo</x-admin.button><x-admin.button variant="secondary" :href="route('administracion.bloqueos.index', ['medico' => $doctor['codMed']])">Cancelar</x-admin.button></div>
     </x-admin.form>

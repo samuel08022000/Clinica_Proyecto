@@ -2,6 +2,8 @@
 
 Plataforma web para la gestión centralizada de agendas médicas, reserva atómica de citas dentro de una ventana móvil de 14 días, validación de asistencia por código QR firmado (HMAC-SHA256), derivaciones interconsulta y control de ausentismo (No-Show).
 
+Guía actual de [ejecución e integración aislada](docs/ejecucion-integracion.md) e [informe de validación de Fase 12](frontend_clinica/docs/fase12-validacion.md).
+
 ### 👥 Equipo de Desarrollo
 * **Samuel Freddy Alcón Tinta**
 * **Angela Victoria Maqui Quispe**
@@ -25,7 +27,7 @@ El proyecto separa estrictamente el **Frontend Web** del **Backend API / Base de
   └── resources/views/             -> Vistas Blade organizadas por módulo
        │  2. Petición REST JSON (Puerto 8080)
        ▼
-[Quarkus 3 (Java 21): backend_clinica] (Puerto 8080)
+[Quarkus 3 (Java 25): backend_clinica] (Puerto 8080)
   ├── org.clinica.controller       -> Endpoints REST (@Path("/api/v1/..."))
   ├── org.clinica.service          -> Lógica de negocio (@Transactional) + DbActorHelper
   ├── org.clinica.repository       -> Repositorios Panache + CitaFunctionRepository (Funciones SQL)
