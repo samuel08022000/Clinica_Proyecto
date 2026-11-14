@@ -15,10 +15,56 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.clinica.dto.recepcion.RecepcionDtos.CitaHistorial;
 import org.clinica.dto.recepcion.RecepcionDtos.PaginaCitas;
+import org.clinica.dto.medico.MedicoDtos.CitaMedica;
+import org.clinica.dto.medico.MedicoDtos.HistorialMedico;
+import jakarta.persistence.LockModeType;
+import jakarta.transaction.Transactional;
 
 /** Consultas administrativas. Las escrituras continúan en CitaFunctionRepository. */
 @ApplicationScoped
 public class CitaRepository implements PanacheRepositoryBase<Cita,String> {
+    private static final String CITA_MEDICA = """
+            SELECT c.codCit,c.codPac,u.nombreCompleto,c.codEsp,e.nombreEspecialidad,
+                c.fecha,c.horaInicio,c.horaFin,c.estado,c.canalReserva,c.horaLlegadaCheckin,
+                c.checkinPorUsu,c.fechaAtencion,c.atendidaPorUsu
+            FROM Cita c JOIN Paciente p ON p.codPac=c.codPac JOIN Usuario u ON u.codUsu=p.codUsu
+            JOIN Especialidad e ON e.codEsp=c.codEsp WHERE c.codMed=:med
+            """;
+
+    public LocalDate fechaClinica() {
+        return (LocalDate) getEntityManager().createNativeQuery("SELECT public.fecha_clinica()", LocalDate.class)
+                .getSingleResult();
+    }
+
+    public List<CitaMedica> agendaMedica(String codMed, LocalDate fecha) {
+        return getEntityManager().createQuery(CITA_MEDICA + " AND c.fecha=:fecha ORDER BY c.horaInicio,c.codCit", CitaMedica.class)
+                .setParameter("med", codMed).setParameter("fecha", fecha).getResultList();
+    }
+
+    public Optional<CitaMedica> consultarCitaMedica(String codCit, String codMed) {
+        return Optional.ofNullable(getEntityManager().createQuery(CITA_MEDICA + " AND c.codCit=:cit", CitaMedica.class)
+                .setParameter("med", codMed).setParameter("cit", codCit).getSingleResultOrNull());
+    }
+
+    @Transactional(Transactional.TxType.MANDATORY)
+    public Optional<Cita> bloquearCitaMedica(String codCit, String codMed) {
+        return find("codCit=?1 and codMed=?2", codCit, codMed).withLock(LockModeType.PESSIMISTIC_WRITE)
+                .firstResultOptional();
+    }
+
+    public HistorialMedico historialMedico(String codMed, LocalDate desde, LocalDate hasta, int page, int size) {
+        String filtro = " AND c.estado='Atendida'";
+        if (desde != null) filtro += " AND c.fecha>=:desde";
+        if (hasta != null) filtro += " AND c.fecha<=:hasta";
+        var consulta = getEntityManager().createQuery(CITA_MEDICA + filtro
+                + " ORDER BY c.fecha DESC,c.horaInicio DESC,c.codCit DESC", CitaMedica.class).setParameter("med", codMed);
+        if (desde != null) consulta.setParameter("desde", desde);
+        if (hasta != null) consulta.setParameter("hasta", hasta);
+        List<CitaMedica> filas = consulta.setFirstResult(page * size).setMaxResults(size + 1).getResultList();
+        boolean hayMas = filas.size() > size;
+        return new HistorialMedico(List.copyOf(hayMas ? filas.subList(0, size) : filas), page, size, hayMas);
+    }
+
     private static final String HISTORIAL = """
             SELECT h.codCit,h.codPac,u.nombreCompleto,h.codMed,h.nombreMedico,h.codEsp,h.nombreEspecialidad,
                 h.fecha,h.horaInicio,h.horaFin,h.estado,h.canalReserva,c.motivoCancelacion,c.canceladoPorUsu,
