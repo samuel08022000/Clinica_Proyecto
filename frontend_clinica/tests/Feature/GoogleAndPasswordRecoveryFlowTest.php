@@ -45,8 +45,7 @@ class GoogleAndPasswordRecoveryFlowTest extends TestCase
             ->assertSessionHas('auth_token', 'opaque-quarkus-token')
             ->assertSessionMissing('google_oauth_flow');
 
-        Http::assertSent(fn (Request $request): bool =>
-            str_ends_with($request->url(), '/auth/google/exchange')
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/auth/google/exchange')
             && $request['nonce'] === $flow['nonce']
             && $request['codeVerifier'] === $flow['code_verifier']
             && ! $request->hasHeader('Authorization'));

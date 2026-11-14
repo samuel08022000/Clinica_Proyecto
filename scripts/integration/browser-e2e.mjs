@@ -66,9 +66,9 @@ const login = async (page,user,home) => {
 };
 try {
     // Read-only readiness checks prevent a cold JVM/PHP bootstrap from being mistaken for a failed form.
-    for(const url of ['http://127.0.0.1:18090/hello',base+'/login']){
+    for(const url of ['http://127.0.0.1:18090/api/v1/auth/me',base+'/login']){
         let ready=false;
-        for(let attempt=0;attempt<20;attempt++){try{const response=await fetch(url,{signal:AbortSignal.timeout(8000)});await response.text();if(response.status===200){ready=true;break;}}catch{}await pause(500);}
+        for(let attempt=0;attempt<20;attempt++){try{const response=await fetch(url,{signal:AbortSignal.timeout(8000)});await response.text();if(response.status===(url.endsWith('/auth/me')?401:200)){ready=true;break;}}catch{}await pause(500);}
         if(!ready)throw new Error('Isolated applications did not become ready.');
     }
     browser=await Browser.launch(output);

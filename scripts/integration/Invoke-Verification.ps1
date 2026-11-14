@@ -1,5 +1,19 @@
 param([Parameter(Mandatory=$true)][ValidateSet('Backend','Frontend','Legacy','Browser','Fault','Expiry','Contract','Visual')][string]$Mode, [switch]$Offline)
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell turns native stderr into ErrorRecord when redirected. A diagnostic
+# must not abort a successful Maven/Node/PHP process before its real exit code is checked.
+function Invoke-VerificationNative {
+    param([string]$Executable, [string[]]$NativeArguments)
+    if (-not (Get-Command $Executable -ErrorAction SilentlyContinue)) { throw 'Required verification executable is unavailable.' }
+    $nativeExitCode = 1
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Executable @NativeArguments 2>&1 | ForEach-Object { Write-Output ([string]$_) }
+        $nativeExitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($nativeExitCode -ne 0) { throw "Verification process failed with exit code $nativeExitCode." }
+}
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $backendRoot = Join-Path $projectRoot 'backend_clinica'
 $frontendRoot = Join-Path $projectRoot 'frontend_clinica'
@@ -24,8 +38,7 @@ if ($Mode -eq 'Backend') {
     try {
         $arguments=@('-DskipITs=false','verify')
         if ($Offline) { $arguments=@('-o')+$arguments }
-        & .\mvnw.cmd @arguments
-        if ($LASTEXITCODE -ne 0) { throw 'Backend verification failed.' }
+        Invoke-VerificationNative -Executable '.\mvnw.cmd' -NativeArguments $arguments
     } finally { Pop-Location }
 } elseif ($Mode -in @('Browser','Fault','Expiry','Contract','Visual')) {
     $owned = Get-Content -LiteralPath (Join-Path $testRoot 'processes.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -34,8 +47,7 @@ if ($Mode -eq 'Backend') {
     Push-Location $projectRoot
     try {
         $script = switch ($Mode) { 'Browser' { 'scripts/integration/browser-e2e.mjs' } 'Fault' { 'scripts/integration/fault-e2e.mjs' } 'Expiry' { 'scripts/integration/session-expiry.mjs' } 'Contract' { 'scripts/integration/contract-http.mjs' } 'Visual' { 'scripts/integration/visual-audit.mjs' } }
-        & node $script
-        if ($LASTEXITCODE -ne 0) { throw 'Browser verification failed; inspect the private report and its real/simulated classification.' }
+        Invoke-VerificationNative -Executable 'node' -NativeArguments @($script)
     } finally { Pop-Location }
 } else {
     if ($Mode -eq 'Legacy') {
@@ -49,7 +61,6 @@ if ($Mode -eq 'Backend') {
     }
     Push-Location $frontendRoot
     try {
-        & php artisan test --compact --log-junit (Join-Path $testRoot ($Mode.ToLower()+'-laravel.xml'))
-        if ($LASTEXITCODE -ne 0) { throw 'Laravel verification failed.' }
+        Invoke-VerificationNative -Executable 'php' -NativeArguments @('artisan','test','--compact','--log-junit',(Join-Path $testRoot ($Mode.ToLower()+'-laravel.xml')))
     } finally { Pop-Location }
 }

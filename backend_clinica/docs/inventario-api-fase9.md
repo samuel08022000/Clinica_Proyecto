@@ -1,3 +1,5 @@
+> Documento histórico de la fase indicada. En Fase 13 se retiraron /hello, los generadores y el test de credenciales demo; sus resultados anteriores se conservan como evidencia. Para comandos vigentes consultar ../../docs/ejecucion-integracion.md y docs/fase13-auditoria.md desde la raíz.
+
 # Inventario de integración API — Fase 9
 
 Referencia: controladores y DTO del directorio de trabajo, 11 de noviembre de 2026. Prefijo de todas las rutas siguientes: `/api/v1`. Los códigos en `{}` son parámetros de ruta. `—` significa sin cuerpo. Las respuestas indicadas son JSON; `[]` significa un arreglo del DTO indicado, sin envoltorio `data`.

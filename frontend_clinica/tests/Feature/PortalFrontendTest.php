@@ -18,9 +18,25 @@ class PortalFrontendTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('Tus citas, en orden');
-        $response->assertSee('La API de especialidades todavía no está expuesta por Quarkus.');
-        $response->assertSee('API pendiente');
+        $response->assertSee('La API pública de especialidades todavía no está conectada al portal.');
+        $response->assertSeeInOrder(['Reservas web', 'En desarrollo', 'Acreditación con QR', 'Disponible', 'Recordatorio 24 h antes', 'Próximamente', 'Consulta de citas', 'En desarrollo']);
+        $response->assertSee('Aún no se envían recordatorios automáticos.');
         $response->assertDontSee('Medicina General');
+    }
+
+    public function test_classic_portal_keeps_its_public_sections_and_working_navigation(): void
+    {
+        $this->get(route('home'))
+            ->assertOk()
+            ->assertSeeInOrder(['id="inicio"', 'id="especialidades"', 'id="servicios"', 'id="contacto"'], false)
+            ->assertSee('booking-window__note', false)
+            ->assertSee('no representa cupos disponibles')
+            ->assertSee('images/clinic/appointment-calendar.png', false)
+            ->assertSee('images/clinic/reception.png', false)
+            ->assertSee('href="'.route('login').'"', false)
+            ->assertSee('href="'.route('register').'"', false)
+            ->assertSee('aria-describedby="reservation-status"', false)
+            ->assertDontSee('data-demo-user');
     }
 
     public function test_login_form_is_available_with_csrf_protection(): void
@@ -32,11 +48,16 @@ class PortalFrontendTest extends TestCase
             ->assertSee('name="_token"', false);
     }
 
-    public function test_demo_credentials_are_not_rendered_outside_local_or_demo(): void
+    public function test_demo_accounts_are_absent_even_in_local_environment(): void
     {
+        $this->app->detectEnvironment(fn () => 'local');
+        config()->set('clinic.demo.enabled', true);
         $this->get(route('login'))
             ->assertOk()
             ->assertDontSee('Acceso rápido de demostración')
+            ->assertDontSee('data-demo-user')
+            ->assertDontSee('samuel.paciente@unifranz.edu.bo')
+            ->assertSee('No hay accesos predeterminados.')
             ->assertDontSee('$2a$12$');
     }
 

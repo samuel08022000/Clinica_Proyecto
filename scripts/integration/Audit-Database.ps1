@@ -18,7 +18,8 @@ $objects=@($auditOutput | Where-Object{$_ -match '^\{'} | ForEach-Object{$_|Conv
 if($objects.Count -ne 2){throw 'Unexpected audit format.'}
 [IO.File]::WriteAllText((Join-Path $testRoot 'database-audit.json'),($objects|ConvertTo-Json -Depth 5),[Text.UTF8Encoding]::new($false))
 $metadata=$objects[0]
-if($metadata.successfulMigrations -ne 9 -or $metadata.failedMigrations -ne 0 -or $metadata.unvalidatedConstraints -ne 0 -or $metadata.disabledTriggers -ne 0 -or $metadata.orphanAppointments -ne 0 -or $metadata.duplicateEffectiveSlots -ne 0 -or $metadata.invalidStoredQr -ne 0 -or !$metadata.clinicalDateCorrect -or $metadata.administrativeViews -ne 2){throw 'An integrity assertion failed.'}
+if($metadata.baselineWithoutDemo -ne 1 -or $metadata.emailOtpMigration -ne 1 -or $metadata.historicalDemoAccounts -ne 0){throw 'Expected B9 + R without historical demo accounts.'}
+if($metadata.successfulMigrations -ne 2 -or $metadata.failedMigrations -ne 0 -or $metadata.unvalidatedConstraints -ne 0 -or $metadata.disabledTriggers -ne 0 -or $metadata.orphanAppointments -ne 0 -or $metadata.duplicateEffectiveSlots -ne 0 -or $metadata.invalidStoredQr -ne 0 -or !$metadata.clinicalDateCorrect -or $metadata.administrativeViews -ne 2){throw 'An integrity assertion failed.'}
 $failed=@($objects[1].PSObject.Properties | Where-Object{$_.Value -ne $true})
 if($failed.Count -gt 0){$failed.Name | Write-Output;throw 'A persisted workflow assertion failed.'}
 Write-Output ('Read-only PostgreSQL audit passed: metadata and '+@($objects[1].PSObject.Properties).Count+' persisted workflow assertions.')

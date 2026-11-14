@@ -59,4 +59,30 @@ $arguments = '-S 127.0.0.1:18092 -t "' + (Join-Path $frontendRoot 'public') + '"
 $faulty = Start-Process -FilePath $php -ArgumentList $arguments -WorkingDirectory $frontendRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $testRoot "$Dataset-fault.stdout.log") -RedirectStandardError (Join-Path $testRoot "$Dataset-fault.stderr.log")
 $processes = @{ dataset=$Dataset; quarkus=$quarkus.Id; laravel=$healthy.Id; faulty=$faulty.Id; startedAt=$startedAt }
 [IO.File]::WriteAllText($pidPath, ($processes | ConvertTo-Json))
-Write-Output 'Owned Quarkus/Laravel processes started on 18090/18091/18092. Credentials are not printed.'
+# Return only when the real HTTP boundaries are ready, including a cold Maven bootstrap.
+# This prevents the caller from starting live tests while the processes merely exist.
+$readyDeadline = [DateTime]::UtcNow.AddMinutes(3)
+$ready = $false
+while ([DateTime]::UtcNow -lt $readyDeadline) {
+    $statuses = @()
+    foreach ($url in @('http://127.0.0.1:18090/api/v1/auth/me','http://127.0.0.1:18091/login')) {
+        $response = $null
+        try {
+            $probeRequest = [Net.HttpWebRequest]::Create($url)
+            $probeRequest.Timeout = 2000
+            $probeRequest.AllowAutoRedirect = $false
+            $response = $probeRequest.GetResponse()
+            $statuses += [int]$response.StatusCode
+        } catch [Net.WebException] {
+            $response = $_.Exception.Response
+            $statuses += $(if ($response) { [int]$response.StatusCode } else { 0 })
+        } finally { if ($response) { $response.Dispose() } }
+    }
+    if ($statuses[0] -eq 401 -and $statuses[1] -eq 200) { $ready = $true; break }
+    Start-Sleep -Milliseconds 500
+}
+if (-not $ready) {
+    & (Join-Path $PSScriptRoot 'Stop-Applications.ps1')
+    throw 'Owned applications failed readiness checks; inspect their private logs.'
+}
+Write-Output 'Owned Quarkus/Laravel ready on 18090/18091/18092 (401 auth boundary, 200 login). Credentials are not printed.'

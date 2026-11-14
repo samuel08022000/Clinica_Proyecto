@@ -1,3 +1,5 @@
+> Documento histórico de la fase indicada. En Fase 13 se retiraron /hello, los generadores y el test de credenciales demo; sus resultados anteriores se conservan como evidencia. Para comandos vigentes consultar ../../docs/ejecucion-integracion.md y docs/fase13-auditoria.md desde la raíz.
+
 # Fase 12 — Integración real y validación final
 
 Ejecución: 12 de noviembre de 2026. Referencia inicial: `5bc814a`. Alcance: auditar los paneles existentes, probar la integración y corregir defectos comprobados. No se construyeron módulos nuevos ni se rediseñaron los paneles.

@@ -1164,81 +1164,6 @@ p {
     text-align: center;
 }
 
-.demo-access {
-    margin-top: 2.5rem;
-    padding: 1.25rem;
-    border-radius: var(--radius);
-    background: var(--surface);
-}
-
-.demo-access__heading {
-    display: flex;
-    align-items: start;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1rem;
-}
-
-.demo-access__heading h3 {
-    font-size: 1.15rem;
-    font-weight: 500;
-}
-
-.demo-access__heading span {
-    padding: 0.35rem 0.55rem;
-    border-radius: var(--radius);
-    background: var(--ink);
-    color: #fff;
-    font-size: 0.75rem;
-}
-
-.demo-users {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-}
-
-.demo-user {
-    display: grid;
-    min-height: 7.25rem;
-    align-content: center;
-    padding: 0.85rem;
-    border: 0;
-    border-radius: var(--radius);
-    background: #fff;
-    color: var(--ink);
-    text-align: left;
-    transition: background-color var(--transition-fast), transform var(--transition-fast);
-}
-
-.demo-user:hover {
-    transform: translateY(-2px);
-    background: #dbeaec;
-}
-
-.demo-user__role {
-    color: var(--accent-strong);
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.demo-user__name {
-    margin-top: 0.2rem;
-    font-weight: 500;
-}
-
-.demo-user__email {
-    margin-top: 0.25rem;
-    overflow-wrap: anywhere;
-    color: var(--muted);
-    font-size: 0.73rem;
-}
-
-.demo-access .integration-note {
-    margin-top: 1rem;
-    text-align: left;
-}
-
 .auth-switch {
     margin-top: 2rem;
     color: var(--muted);
@@ -1679,10 +1604,6 @@ p {
         grid-template-columns: minmax(17rem, 38%) minmax(0, 62%);
     }
 
-    .demo-users {
-        grid-template-columns: 1fr;
-    }
-
     .registration-layout {
         gap: 2.5rem;
         grid-template-columns: minmax(15rem, 0.7fr) minmax(0, 1.3fr);
@@ -1903,7 +1824,6 @@ p {
     }
 
     .form-support,
-    .demo-access__heading,
     .step-actions {
         align-items: stretch;
         flex-direction: column;

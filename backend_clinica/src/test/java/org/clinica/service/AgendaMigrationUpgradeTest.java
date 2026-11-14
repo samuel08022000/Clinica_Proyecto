@@ -33,13 +33,19 @@ class AgendaMigrationUpgradeTest {
         String jdbcUrl;
         try (Connection current = datasource.getConnection(); var statement = current.createStatement()) {
             String currentUrl = current.getMetaData().getURL();
+            if (!currentUrl.matches("jdbc:postgresql://127\\.0\\.0\\.1:35441/clinica_fase12_tests(?:\\?.*)?")) {
+                throw new IllegalStateException("Upgrade tests require the exclusive integration server on 35441.");
+            }
             int query = currentUrl.indexOf('?');
             String base = query < 0 ? currentUrl : currentUrl.substring(0, query);
             jdbcUrl = base.substring(0, base.lastIndexOf('/') + 1) + database;
             statement.execute("CREATE DATABASE " + database);
         }
-        Flyway.configure().dataSource(jdbcUrl, username, password).locations("classpath:db/migration")
-                .target(previousVersion).load().migrate();
+        try {
+        try (HistoricalMigrations original = new HistoricalMigrations()) {
+            Flyway.configure().dataSource(jdbcUrl, username, password).locations(original.location())
+                    .target(previousVersion).load().migrate();
+        }
         String suffix = UUID.randomUUID().toString();
         String hash = BcryptUtil.bcryptHash(suffix);
         String legacyBlock;
@@ -126,6 +132,12 @@ class AgendaMigrationUpgradeTest {
             }
             assertEquals("P4030", assertThrows(SQLException.class, () -> scalar(connection,
                     "SELECT public.reservar_cita('PAC999999','SLT99999999','USU999999','Ventanilla',NULL)")).getSQLState());
+        }
+        } finally {
+            if (!database.matches("clinica_upgrade_[a-f0-9]{32}")) throw new IllegalStateException("Not owned");
+            try (Connection current = datasource.getConnection(); var statement = current.createStatement()) {
+                statement.execute("DROP DATABASE " + database);
+            }
         }
     }
 

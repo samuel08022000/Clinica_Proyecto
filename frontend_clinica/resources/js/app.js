@@ -146,21 +146,6 @@ document.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
     });
 });
 
-document.querySelectorAll('[data-demo-user]').forEach((demoButton) => {
-    demoButton.addEventListener('click', () => {
-        const email = document.getElementById('email');
-
-        if (email) {
-            email.value = demoButton.dataset.email ?? '';
-            email.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        document.querySelectorAll('[data-demo-user]').forEach((button) => button.removeAttribute('aria-pressed'));
-        demoButton.setAttribute('aria-pressed', 'true');
-        email?.focus();
-    });
-});
-
 document.querySelectorAll('[data-submit-form]').forEach((form) => {
     form.addEventListener('submit', () => {
         const button = form.querySelector('[data-submit-button]');

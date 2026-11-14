@@ -20,7 +20,7 @@ npm.cmd ci
 npm.cmd run build
 ```
 
-No usar `composer setup` para esta verificación: incluye generación de clave y migraciones locales. No ejecutar `boost:install`, reinstalar skills o cambiar versiones para realizar pruebas.
+Para esta verificación ejecutar los comandos explícitos: `composer setup` todavía genera clave local y no debe ejecutarse sobre una configuración existente. Fase 13 retiró de Composer la ejecución automática de migraciones Laravel. No ejecutar `boost:install`, reinstalar skills o cambiar versiones para realizar pruebas.
 
 ## Configuración de desarrollo
 
@@ -36,6 +36,19 @@ Configurar los archivos `.env` locales a partir de sus ejemplos únicamente si t
 | Google | Variables OIDC del ejemplo, solo con credenciales y callback autorizados. Las pruebas locales no acreditan consentimiento externo. |
 
 Antes de iniciar Quarkus, comprobar que la URL JDBC pertenece a la base autorizada: Flyway migra al arrancar. No descubrir el estado de una base real iniciando la aplicación sobre ella. Revisar historial/checksums y respaldo antes de cualquier despliegue.
+
+Iniciar PostgreSQL desde la raíz y comprobar su puerto, sin eliminar volúmenes:
+
+```powershell
+docker version
+docker compose up -d postgres_db
+docker compose ps postgres_db
+docker compose port postgres_db 5432
+```
+
+El valor habitual es 5433; la URL JDBC debe coincidir con el valor real. [Guía DBeaver](configuracion-dbeaver.md). Las bases vacías usan B9 + R sin cuentas; las históricas conservan sus V y, si corresponde, V3 local original. No ejecutar scripts de credenciales demo: fueron retirados. [Inventario Flyway](../backend_clinica/src/main/resources/db/migration/README.md).
+
+Si la instancia autorizada ya está activa en ese puerto, reutilizarla y omitir `compose up`; no iniciar otro contenedor sobre 5433 ni detener uno ajeno. En esta fase la base habitual existente se mantuvo intacta y solo se arrancó el proyecto aislado de integración.
 
 Arranque de desarrollo, en terminales separadas:
 
@@ -54,9 +67,9 @@ cd frontend_clinica
 npm.cmd run dev
 ```
 
-Comprobar `/hello` en Quarkus y `/login` en Laravel. Entrar con cuentas autorizadas; las redirecciones son `/paciente/inicio`, `/secretaria/inicio`, `/medico/inicio` y `/administracion/inicio`. No usar una cuenta administrativa para simular Secretaría.
+Comprobar `/api/v1/auth/me` en Quarkus: sin Bearer debe responder **401**, y `/login` en Laravel debe responder **200**. Entrar con cuentas autorizadas; las redirecciones son `/paciente/inicio`, `/secretaria/inicio`, `/medico/inicio` y `/administracion/inicio`. Para uso habitual: entrar con una cuenta autorizada ROL004, abrir Administración y comprobar catálogos reales; cerrar sesión; entrar con una cuenta ROL002 con perfil Secretario activo y abrir Secretaría para consultar citas reales. Si no existe personal, el login informa que se requiere su alta por el responsable; no hay accesos predeterminados. La propuesta para el primer administrador está en la guía DBeaver y no se ejecuta automáticamente.
 
-`docker-compose.yml` mantiene el stack habitual y su perfil `fullstack`. Sus runtimes declaran Java 25 y PHP 8.5. Ese perfil necesita dependencias Composer y assets del proyecto montado; la imagen PHP CLI no incluye Composer o Node. La Fase 12 utiliza PostgreSQL en Compose y los runtimes nativos instalados; no acredita la ejecución completa de ese perfil.
+`docker-compose.yml` mantiene el stack habitual y su perfil `fullstack`. pgAdmin queda como herramienta opcional bajo el perfil `pgadmin`, fuera del arranque normal: DBeaver no requiere sus credenciales. Para habilitarlo, definir correo y contraseña individuales en el entorno privado; los valores vacíos hacen que pgAdmin rechace su arranque, sin contraseña predeterminada. Los runtimes fullstack declaran Java 25 y PHP 8.5. Ese perfil necesita dependencias Composer y assets del proyecto montado; la imagen PHP CLI no incluye Composer o Node. Esta fase utiliza PostgreSQL en Compose y los runtimes nativos instalados; no acredita la ejecución completa de fullstack.
 
 ## Integración aislada reproducible
 
@@ -71,15 +84,19 @@ powershell -NoProfile -File scripts/integration/Start-Applications.ps1 -Dataset 
 
 La base es un proyecto Compose **clinica-fase12** separado. PostgreSQL se publica solo en `127.0.0.1:35441`, sin volumen persistente compartido y con datos en tmpfs. La contraseña se genera aleatoriamente y se conserva únicamente en `backend_clinica/target/integration-fase12/runtime.json`, ignorado por Git. No imprimir ese archivo.
 
+Ejecutar las etapas en orden: terminar `Backend` antes de iniciar Quarkus en dev, porque ambos procesos comparten clases y cachés en `target`. `Start-Applications.ps1` espera hasta tres minutos el 401 real de Quarkus y el 200 del login, y detiene sus propios procesos si no quedan listos. El verificador comprueba el código de salida de Maven/Node/PHP, sin confundir sus diagnósticos en stderr con un fallo de ejecución. PHPUnit fija sus variables de entorno de prueba aunque la terminal herede `APP_ENV=production`; los servidores HTTP separados conservan sesiones y CSRF reales.
+
+Las pruebas internas fijan tanto `ENV` como `SERVER` y usan `http://quarkus.test/api/v1` con `Http::fake`, sin heredar el backend habitual ni el servidor de fallos. Las suites Live configuran explícitamente la URL del fixture aislado y comprueban sus guardas antes de usar HTTP real. No cambiar la seguridad de los servidores para hacer pasar tests internos.
+
 La suite backend usa `clinica_fase12_tests`; las pruebas heredadas usan una base nueva `clinica_fase9_live_f12` por compatibilidad de sus guardas. El navegador usa `clinica_fase12_e2e_<sufijo>` con una marca de propiedad que verifica el fixture antes de migrar. Se rechazan esquemas existentes. Las pruebas de actualización crean bases auxiliares exclusivamente en este contenedor.
 
-Quarkus ocupa 18090; Laravel sano 18091; otro Laravel con transporte deliberadamente caído ocupa 18092 y comparte solo la sesión temporal. Esperar HTTP 200 en `http://127.0.0.1:18090/hello` y `http://127.0.0.1:18091/login` antes de continuar. El arranque del JVM/Maven en frío puede tardar varios minutos. Los procesos se ejecutan con ventana oculta y quedan registrados para detener exclusivamente esos PID.
+Quarkus ocupa 18090; Laravel sano 18091; otro Laravel con transporte deliberadamente caído ocupa 18092 y comparte solo la sesión temporal. Esperar HTTP 401 sin Bearer en `http://127.0.0.1:18090/api/v1/auth/me` y HTTP 200 en `http://127.0.0.1:18091/login` antes de continuar. El arranque del JVM/Maven en frío puede tardar varios minutos. Los procesos se ejecutan con ventana oculta y quedan registrados para detener exclusivamente esos PID.
 
 ```powershell
 powershell -NoProfile -File scripts/integration/Invoke-Verification.ps1 -Mode Legacy
 powershell -NoProfile -File scripts/integration/Stop-Applications.ps1
 powershell -NoProfile -File scripts/integration/Start-Applications.ps1 -Dataset browser
-# Esperar nuevamente /hello y /login.
+# Esperar nuevamente 401 en /api/v1/auth/me y 200 en /login.
 powershell -NoProfile -File scripts/integration/Invoke-Verification.ps1 -Mode Browser
 powershell -NoProfile -File scripts/integration/Audit-Database.ps1
 powershell -NoProfile -File scripts/integration/Invoke-Verification.ps1 -Mode Contract
@@ -92,7 +109,7 @@ powershell -NoProfile -File scripts/integration/Invoke-Verification.ps1 -Mode Vi
 
 `Contract` verifica los límites corregidos y errores reales mediante HTTP. `Expiry` arranca otra aplicación Quarkus empaquetada en 18094 y un Laravel en 18095; reduce solo el TTL de ese proceso a un minuto y espera su vencimiento natural con HTTP/cookies/CSRF. No modifica el reloj ni atribuye esa prueba a Chrome. `Visual` utiliza Laravel en modo producción en 18096 y la base real aislada para capturas/teclado/responsive; sus procesos secundarios se cierran al terminar.
 
-Los usuarios sintéticos de cuatro roles, observadores y dos secretarios están en el fixture privado `target/integration-fase12/browser-fixture.json`; el test los lee en memoria. Para una demostración autorizada, consultar ese fixture local en privado y entrar por `/login`, sin copiar credenciales a este documento, capturas o mensajes. Un nuevo login revoca la sesión anterior de la misma cuenta: utilizar cuentas distintas para observación y operación. No existe acceso demo añadido por estos scripts.
+Los usuarios sintéticos de cuatro roles, observadores y dos secretarios están en el fixture privado `target/integration-fase12/browser-fixture.json`; el test los lee en memoria. Exclusivamente para QA aislado, consultar ese fixture local en privado y entrar por `/login`, sin copiar credenciales a este documento, capturas o mensajes. Un nuevo login revoca la sesión anterior de la misma cuenta: utilizar cuentas distintas para observación y operación. No existe acceso demo añadido por estos scripts.
 
 El QR del fixture es emitido por la función SQL real y solo se introduce en el POST de check-in. No está en URLs, reportes o listados. El escenario de inasistencia parte de una reserva creada válidamente y envejecida **solo dentro del bootstrap aislado** para representar un antecedente vencido. No se modifica el reloj, ni se desactivan triggers o restricciones; no acredita haber esperado el vencimiento natural durante el recorrido.
 

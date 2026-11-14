@@ -1,3 +1,5 @@
+> Documento histórico de la fase indicada. En Fase 13 se retiraron /hello, los generadores y el test de credenciales demo; sus resultados anteriores se conservan como evidencia. Para comandos vigentes consultar ../../docs/ejecucion-integracion.md y docs/fase13-auditoria.md desde la raíz.
+
 # Informe de integración — Fase 9
 
 Ejecución: 11 de noviembre de 2026, America/La_Paz. Referencia inicial de Git: `91141f0`. Alcance: integración y correcciones mínimas; no se construyeron paneles ni se inició Fase 10.

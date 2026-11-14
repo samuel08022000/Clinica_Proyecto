@@ -45,8 +45,7 @@ class AuthFlowTest extends TestCase
             ->assertSessionHas('cod_rol', $roleCode)
             ->assertSessionHas('auth_token', 'opaque-test-token');
 
-        Http::assertSent(fn (Request $request): bool =>
-            $request->url() === 'http://localhost:8080/api/v1/auth/login'
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://quarkus.test/api/v1/auth/login'
             && ! $request->hasHeader('Authorization')
             && $request['email'] === 'usuario@clinica.bo');
     }
@@ -121,8 +120,7 @@ class AuthFlowTest extends TestCase
             ->assertOk()
             ->assertSee('Inicio de Paciente');
 
-        Http::assertSent(fn (Request $request): bool =>
-            str_starts_with($request->url(), 'http://localhost:8080/api/v1/auth/authorize')
+        Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'http://quarkus.test/api/v1/auth/authorize')
             && $request->hasHeader('Authorization', 'Bearer opaque-test-token')
             && $request['roles'] === 'ROL001');
     }
@@ -167,8 +165,7 @@ class AuthFlowTest extends TestCase
             ->assertSessionMissing('auth_token')
             ->assertSessionMissing('cod_usu');
 
-        Http::assertSent(fn (Request $request): bool =>
-            $request->url() === 'http://localhost:8080/api/v1/auth/logout'
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://quarkus.test/api/v1/auth/logout'
             && $request->hasHeader('Authorization', 'Bearer opaque-test-token'));
     }
 
