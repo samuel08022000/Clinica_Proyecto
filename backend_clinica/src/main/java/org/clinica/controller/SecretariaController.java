@@ -44,6 +44,7 @@ public class SecretariaController {
     @Inject ReservaCitaService reservas;
     @Inject AtencionCheckinService checkin;
     @Inject GestionCitaService gestion;
+    @Inject org.clinica.service.MedicoDerivacionService derivaciones;
 
     @GET
     @Path("/pacientes")
@@ -91,7 +92,7 @@ public class SecretariaController {
         String actor = exigirSecretaria(authorization);
         if (solicitud == null || solicitud.tieneCamposNoPermitidos()) {
             throw PersonalService.error(Response.Status.BAD_REQUEST, "VALIDACION",
-                    "La reserva requiere únicamente codPac y codSlot.");
+                    "La reserva requiere codSlot, codPac y opcionalmente codDer; con derivación codPac puede omitirse.");
         }
         return Response.status(Response.Status.CREATED).entity(reservas.reservarPresencial(solicitud, actor)).build();
     }
@@ -161,6 +162,15 @@ public class SecretariaController {
     public Response inasistencia(@PathParam("codCit") String codCit, InasistenciaSolicitud solicitud,
             @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
         return respuestaPrivada(gestion.registrarInasistencia(codCit, solicitud, exigirSecretaria(authorization)));
+    }
+
+    @GET
+    @Path("/derivaciones")
+    public Response derivaciones(@QueryParam("estado") String estado,
+            @QueryParam("page") @DefaultValue("0") String page, @QueryParam("size") @DefaultValue("20") String size,
+            @HeaderParam(HttpHeaders.AUTHORIZATION) String authorization) {
+        exigirSecretaria(authorization);
+        return respuestaPrivada(derivaciones.pendientesSecretaria(estado, page, size));
     }
 
     private static Response respuestaPrivada(Object entidad) {

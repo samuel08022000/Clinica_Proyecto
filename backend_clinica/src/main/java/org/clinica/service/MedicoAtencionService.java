@@ -75,7 +75,7 @@ public class MedicoAtencionService {
         return citas.historialMedico(medico.codMed, inicio, fin, page, size);
     }
 
-    private Medico medicoAutenticado(String authorization) {
+    public Medico medicoAutenticado(String authorization) {
         String usuario = auth.requireAnyRole(BearerToken.bearerToken(authorization), Set.of("ROL003")).user().id();
         // AuthService revalida además usuario, rol y perfil activos en cada solicitud.
         return personal.findMedicoByCodUsu(usuario).filter(m -> "Activo".equals(m.estado)).orElseThrow(() ->

@@ -34,6 +34,9 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4094".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "DERIVACION_NO_DISPONIBLE", "La derivación ya fue programada o el destino no es compatible.");
+            }
             if ("P4003".equals(psql.getSQLState())) {
                 return json(Response.Status.BAD_REQUEST, "VALIDACION", "Debe indicar un motivo válido y una duración de 1 a 365 días.");
             }

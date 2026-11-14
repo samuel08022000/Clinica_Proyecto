@@ -36,7 +36,7 @@ class FlywayCompatibilityTest {
                     .locations("classpath:db/migration", "filesystem:db/dev-migration")
                     .placeholders(Map.of("environment", "development")).outOfOrder(true)
                     .baselineOnMigrate(false).cleanDisabled(true).load();
-            assertEquals(2, cleanStart.migrate().migrationsExecuted); // B9 + R
+            assertEquals(3, cleanStart.migrate().migrationsExecuted); // B9 + V10 + R
             cleanStart.validate();
             try (Connection db = connect(fresh)) {
                 assertEquals("0", scalar(db, "SELECT count(*) FROM public.usuarios"));

@@ -15,6 +15,7 @@ public final class RecepcionDtos {
     public static class NuevaCita extends SolicitudConCamposPermitidos {
         public String codPac;
         public String codSlot;
+        public String codDer;
     }
 
     public static class CheckinSolicitud extends SolicitudConCamposPermitidos {
