@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PortalController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PacienteController;
 
 Route::get('/', [PortalController::class, 'index'])->name('home');
 
@@ -45,8 +46,31 @@ Route::controller(AuthController::class)->group(function (): void {
 });
 
 Route::controller(AuthController::class)->group(function (): void {
-    Route::get('/paciente/inicio', 'dashboard')->middleware('rol:ROL001')->name('paciente.home');
     Route::get('/secretaria/inicio', 'dashboard')->middleware('rol:ROL002')->name('secretaria.home');
     Route::get('/medico/inicio', 'dashboard')->middleware('rol:ROL003')->name('medico.home');
     Route::get('/administracion/inicio', 'dashboard')->middleware('rol:ROL004')->name('administracion.home');
+});
+Route::prefix('paciente')
+    ->name('paciente.')
+    ->middleware('rol:ROL001')
+    ->controller(PacienteController::class)
+    ->group(function (): void {
+        Route::get('/inicio', 'home')->name('home');
+        Route::get('/citas', 'citas')->name('citas');
+        Route::get('/citas/nueva', 'nuevaCita')->name('citas.nueva');
+        Route::post('/citas', 'guardarCita')->middleware('throttle:10,1')->name('citas.store');
+        Route::post('/citas/{codCit}/cancelar', 'cancelarCita')->middleware('throttle:10,1')->name('citas.cancel');
+        Route::get('/perfil', 'perfil')->name('perfil');
+        Route::put('/perfil', 'actualizarPerfil')->middleware('throttle:10,1')->name('perfil.update');
+    });
+
+    // TEMPORAL: entrar como paciente sin login. BORRAR antes de entregar.
+Route::get('/dev/paciente', function () {
+    session([
+        'nombre_usuario' => 'Paciente de Prueba',
+        'email_usuario' => 'paciente.dev@local.test',
+        'cod_rol' => 'ROL001',
+    ]);
+
+    return redirect()->route('paciente.home');
 });

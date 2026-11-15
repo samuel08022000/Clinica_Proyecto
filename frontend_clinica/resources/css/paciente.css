@@ -1,0 +1,142 @@
+/* Módulo paciente. Reutiliza las variables y componentes de app.css. */
+
+.pac-shell {
+    width: min(1120px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 32px 0 80px;
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+}
+
+.pac-user { display: flex; align-items: center; gap: 1rem; }
+.pac-user__name { font-weight: 600; }
+.pac-btn-sm { min-height: 2.5rem; padding: 0.45rem 1rem; font-size: 0.9375rem; }
+
+/* Navegación: lateral en escritorio, barra horizontal en móvil */
+.pac-nav { display: grid; gap: 0.25rem; position: sticky; top: 1rem; }
+.pac-nav__link {
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.pac-nav__link:hover { background: var(--surface-strong); color: var(--ink); }
+.pac-nav__link.is-active { background: var(--ink); color: #fff; }
+
+.pac-main { display: grid; gap: 1.5rem; min-width: 0; }
+
+.pac-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 0.75rem 1.5rem; }
+.pac-head h1 { font-size: clamp(1.5rem, 2.8vw, 2rem); line-height: 1.15; }
+.pac-head p { color: var(--muted); flex-basis: 100%; }
+
+.pac-panel {
+    display: grid;
+    gap: 1.25rem;
+    padding: clamp(1.25rem, 3vw, 2rem);
+    background: #fff;
+    border: 1px solid #dce5e8;
+    border-radius: 8px;
+}
+.pac-panel > h2 { font-size: 1.125rem; }
+.pac-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.5rem; }
+
+.pac-stats { display: flex; gap: 2.5rem; margin: 0; }
+.pac-stats dt { color: var(--muted); font-size: var(--step-small); }
+.pac-stats dd { margin: 0.25rem 0 0; font-size: 1.75rem; font-weight: 650; }
+.pac-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.pac-more { justify-self: start; font-weight: 500; }
+
+/* Cita */
+.pac-cita {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr) auto;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    background: var(--surface);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+}
+.pac-cita__when { display: grid; align-content: start; gap: 0.15rem; }
+.pac-cita__when span { color: var(--muted); }
+.pac-cita__body h3 { font-size: 1.0625rem; }
+.pac-cita__doctor { color: var(--muted); }
+.pac-cita__motivo { margin-top: 0.5rem; font-size: var(--step-small); }
+.pac-cita__side { display: grid; align-content: start; justify-items: end; gap: 0.75rem; }
+.pac-cita__nota { max-width: 16rem; color: var(--muted); font-size: var(--step-small); text-align: right; }
+.pac-list { display: grid; gap: 1rem; }
+
+.pac-badge { padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.8125rem; font-weight: 650; background: #e7f0f2; color: #1a4b58; }
+.pac-badge--confirmada { background: var(--success-surface); color: var(--success); }
+.pac-badge--espera, .pac-badge--afectada { background: #fdf1d9; color: #7a5200; }
+.pac-badge--noasistio, .pac-badge--reprogramada { background: var(--surface-strong); color: var(--muted); }
+.pac-badge--atendida { background: #e7f0f2; color: #1a4b58; }
+.pac-badge--cancelada { background: var(--error-surface); color: var(--error); }
+
+.pac-link-danger { padding: 0.25rem 0; border: 0; background: none; color: var(--error); font-weight: 500; text-decoration: underline; }
+
+/* Pestañas */
+.pac-tabs { display: flex; gap: 0.25rem; border-bottom: 2px solid #dce5e8; }
+.pac-tab { margin-bottom: -2px; padding: 0.7rem 1rem; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; text-decoration: none; }
+.pac-tab span { margin-left: 0.25rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--surface-strong); font-size: 0.8125rem; }
+.pac-tab.is-active { border-bottom-color: var(--accent); color: var(--ink); }
+
+.pac-empty { display: grid; justify-items: start; gap: 1rem; padding: 1.5rem; background: var(--surface); border-radius: var(--radius); color: var(--muted); }
+
+/* Formularios (select / textarea con el mismo estilo que .field input) */
+.field select,
+.field textarea {
+    width: 100%;
+    min-height: 3.25rem;
+    padding: 0.75rem 0.9rem;
+    border: 2px solid #a9bac2;
+    border-radius: var(--radius);
+    background: #fff;
+    color: var(--ink);
+    font: inherit;
+    transition: border-color var(--transition-fast);
+}
+.field textarea { resize: vertical; }
+.field select:hover, .field textarea:hover { border-color: #718894; }
+.field select:focus, .field textarea:focus { border-color: var(--accent); }
+
+.pac-inline-form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.pac-inline-form .field { flex: 1 1 15rem; }
+.pac-booking { display: grid; gap: 1.25rem; }
+
+/* Selector de horarios */
+.pac-slots { margin: 0; padding: 0; border: 0; display: grid; gap: 0.6rem; }
+.pac-slots legend { padding: 0; margin-bottom: 0.6rem; font-weight: 600; }
+.pac-slots__grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pac-slot { position: relative; }
+.pac-slot input { position: absolute; opacity: 0; inset: 0; }
+.pac-slot span {
+    display: inline-flex; min-width: 4.5rem; min-height: 2.75rem; align-items: center; justify-content: center;
+    border: 2px solid #a9bac2; border-radius: var(--radius); background: #fff; font-weight: 500;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+.pac-slot:hover span { border-color: var(--accent); }
+.pac-slot input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.pac-slot input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 3px; }
+
+.pac-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1.25rem; margin: 0; }
+.pac-data dt { margin-bottom: 0.25rem; color: var(--muted); font-size: 0.8125rem; }
+.pac-data dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+
+@media (max-width: 800px) {
+    .pac-shell { grid-template-columns: 1fr; gap: 16px; padding-top: 16px; }
+    .pac-nav { position: static; display: flex; overflow-x: auto; gap: 0.25rem; padding-bottom: 0.25rem; }
+    .pac-nav__link { white-space: nowrap; }
+    .pac-user__name { display: none; }
+    .pac-cita { grid-template-columns: 1fr; }
+    .pac-cita__side { justify-items: start; }
+    .pac-cita__nota { text-align: left; }
+    .pac-stats { gap: 1.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pac-nav__link, .pac-slot span, .field select, .field textarea { transition: none; }
+}
