@@ -1,3 +1,6 @@
+import './administracion';
+import './secretaria';
+
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const errorSummary = document.querySelector('[data-error-summary]');
@@ -140,21 +143,6 @@ document.querySelectorAll('[data-password-toggle]').forEach((toggle) => {
         }
 
         input.focus();
-    });
-});
-
-document.querySelectorAll('[data-demo-user]').forEach((demoButton) => {
-    demoButton.addEventListener('click', () => {
-        const email = document.getElementById('email');
-
-        if (email) {
-            email.value = demoButton.dataset.email ?? '';
-            email.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        document.querySelectorAll('[data-demo-user]').forEach((button) => button.removeAttribute('aria-pressed'));
-        demoButton.setAttribute('aria-pressed', 'true');
-        email?.focus();
     });
 });
 

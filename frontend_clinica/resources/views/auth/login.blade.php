@@ -40,13 +40,6 @@
 
                 @include('layouts.alerts')
 
-                @unless ($backendAvailable)
-                    <div class="service-notice" role="status">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5m0 4h.01M4 4h16v16H4z" /></svg>
-                        <p><strong>Acceso aún no habilitado.</strong> Quarkus no expone un endpoint de autenticación. El formulario conserva su estructura, pero no iniciará una sesión falsa.</p>
-                    </div>
-                @endunless
-
                 <form class="auth-form" method="POST" action="{{ route('login.attempt') }}" data-submit-form>
                     @csrf
                     <div class="field">
@@ -109,31 +102,7 @@
                     {{ $googleEnabled ? 'Google validará tu identidad; la clínica mantendrá su propia sesión segura.' : 'Disponible cuando se configuren las credenciales OAuth locales.' }}
                 </p>
 
-                @if ($demoEnabled)
-                    <section class="demo-access" aria-labelledby="demo-title">
-                        <div class="demo-access__heading">
-                            <h3 id="demo-title">Acceso rápido de demostración</h3>
-                            <span>Solo entorno local</span>
-                        </div>
-                        <div class="demo-users">
-                            @foreach ($demoUsers as $user)
-                                <button
-                                    type="button"
-                                    class="demo-user"
-                                    data-demo-user
-                                    data-email="{{ $user['email'] }}"
-                                >
-                                    <span class="demo-user__role">{{ $user['role'] }}</span>
-                                    <span class="demo-user__name">{{ $user['name'] }}</span>
-                                    <span class="demo-user__email">{{ $user['email'] }}</span>
-                                </button>
-                            @endforeach
-                        </div>
-                        <p class="integration-note">
-                            Selecciona un perfil para completar el correo. Escribe la contraseña de desarrollo conocida; nunca se incluye en el HTML.
-                        </p>
-                    </section>
-                @endif
+                <p class="integration-note">Si esta instalación aún no tiene cuentas de personal, solicita al responsable su alta autorizada. No hay accesos predeterminados.</p>
 
                 <p class="auth-switch">¿Aún no tienes cuenta? <a href="{{ route('register') }}">Registrarte como paciente</a></p>
             </div>

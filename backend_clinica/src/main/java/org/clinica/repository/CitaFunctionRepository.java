@@ -235,6 +235,13 @@ public class CitaFunctionRepository {
         return aEntero(consulta("SELECT public.marcar_inasistencias_vencidas()").getSingleResult());
     }
 
+    /** RF-23: operación manual, comparte reglas y bloqueos con el proceso automático. */
+    public Boolean registrarInasistencia(String codCit, String codActor) {
+        return (Boolean) consulta("SELECT public.registrar_inasistencia(CAST(:cit AS text),CAST(:actor AS text))")
+                .setParameter("cit", codCit, String.class).setParameter("actor", codActor, String.class)
+                .getSingleResult();
+    }
+
     /** RF-24: reactiva pacientes cuya sanción expiró. Devuelve filas afectadas. */
     public Integer desbloquearSancionesVencidas() {
         return aEntero(consulta("SELECT public.desbloquear_sanciones_vencidas()").getSingleResult());

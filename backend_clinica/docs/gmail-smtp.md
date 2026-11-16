@@ -1,7 +1,7 @@
 # Configurar Gmail SMTP para OTP y recuperación
 
 El mismo proveedor entrega los OTP de registro y los enlaces de recuperación. El sistema
-inicia con `OTP_DELIVERY_PROVIDER=demo`. No cambie a SMTP hasta completar
+inicia con `OTP_DELIVERY_PROVIDER=disabled`. No cambie a SMTP hasta completar
 todos los pasos y probar la cuenta remitente. Las credenciales se guardan únicamente
 en `backend_clinica/.env`, archivo ignorado por Git.
 

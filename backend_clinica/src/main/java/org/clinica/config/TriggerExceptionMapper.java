@@ -34,6 +34,59 @@ public class TriggerExceptionMapper implements ExceptionMapper<Exception> {
 
         PSQLException psql = buscarPSQLException(exception);
         if (psql != null) {
+            if ("P4094".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "DERIVACION_NO_DISPONIBLE", "La derivación ya fue programada o el destino no es compatible.");
+            }
+            if ("P4003".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "Debe indicar un motivo válido y una duración de 1 a 365 días.");
+            }
+            if ("P4033".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "SANCION_NO_AUTORIZADA", "Solo un administrador activo puede aplicar sanciones.");
+            }
+            if ("P4043".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe el paciente.");
+            }
+            if ("P4093".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "CONFLICTO_SANCION", "El paciente tiene una restricción vigente o un estado incompatible.");
+            }
+            if ("P4002".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "El motivo debe tener entre 1 y 2000 caracteres.");
+            }
+            if ("P4032".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "OPERACION_NO_AUTORIZADA", "No tiene permiso para modificar esta cita.");
+            }
+            if ("P4042".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe la cita.");
+            }
+            if ("P4092".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "TRANSICION_NO_PERMITIDA", "El estado o la ventana de la cita no permiten esta operación.");
+            }
+            if ("P4001".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "QR_INVALIDO", "El código QR no es válido.");
+            }
+            if ("P4031".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "SECRETARIA_NO_HABILITADA", "El perfil de secretaría no está habilitado.");
+            }
+            if ("P4041".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "ACREDITACION_NO_ENCONTRADA", "No existe una cita asociada a esa acreditación.");
+            }
+            if ("P4091".equals(psql.getSQLState())) {
+                return json(Response.Status.CONFLICT, "CHECKIN_NO_PERMITIDO", "La cita no admite registro de llegada o ya fue acreditada.");
+            }
+            if ("P5001".equals(psql.getSQLState())) {
+                LOG.error("La verificación QR no está disponible.");
+                return json(Response.Status.INTERNAL_SERVER_ERROR, "ERROR_ACREDITACION", "No fue posible validar la acreditación.");
+            }
+            if ("P4030".equals(psql.getSQLState())) {
+                return json(Response.Status.FORBIDDEN, "RESERVA_NO_AUTORIZADA",
+                        "El usuario o paciente no está habilitado para esta reserva.");
+            }
+            if ("P4040".equals(psql.getSQLState())) {
+                return json(Response.Status.NOT_FOUND, "NO_ENCONTRADO", "No existe el recurso de la reserva.");
+            }
+            if ("P4000".equals(psql.getSQLState())) {
+                return json(Response.Status.BAD_REQUEST, "VALIDACION", "El turno debe ser futuro y estar entre hoy y D+14.");
+            }
             if ("P4090".equals(psql.getSQLState()) && psql.getServerErrorMessage() != null) {
                 return json(Response.Status.CONFLICT, "CONFLICTO_AGENDA", psql.getServerErrorMessage().getMessage());
             }

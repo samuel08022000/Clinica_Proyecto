@@ -74,14 +74,14 @@
                         <h1 id="portal-title">Tus citas, en orden</h1>
                         <p class="hero-copy__lead">Un acceso claro a las especialidades, las reservas y el seguimiento de citas de la clínica.</p>
                         <div class="hero-actions">
-                            <a class="button button--primary" href="{{ route('login') }}">Reservar cita</a>
+                            <a class="button button--primary" href="{{ route('login') }}" aria-describedby="reservation-status">Reservar cita</a>
                             <a class="text-link" href="#especialidades">Conocer especialidades</a>
                         </div>
                     </div>
 
                     <div class="hero-system-note reveal">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Zm0 5v5l3 2" /></svg>
-                        <p>La base de datos limita la agenda web desde hoy hasta 14 días después. La API de reserva aún está pendiente.</p>
+                        <p id="reservation-status">La base de datos limita la agenda desde hoy hasta 14 días después. La reserva en recepción está disponible; la reserva web desde el panel del paciente está en desarrollo.</p>
                     </div>
                 </section>
 
@@ -131,37 +131,37 @@
                 <section id="servicios" class="portal-section capability-section reveal-group" aria-labelledby="services-title">
                     <div class="section-heading reveal">
                         <h2 id="services-title">Servicios del portal</h2>
-                        <p>Cada capacidad indica con precisión qué parte existe y cuál depende todavía del backend.</p>
+                        <p>Cada capacidad indica con precisión qué parte existe y cuál está en desarrollo o llegará próximamente.</p>
                     </div>
 
                     <div class="capability-menu">
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Reservas web</h3>
-                                <p>La base aplica una ventana móvil de hoy a 14 días y evita reservas solapadas.</p>
+                                <p>La base aplica una ventana móvil de hoy a 14 días y evita reservas solapadas. El acceso desde el panel del paciente está en desarrollo.</p>
                             </div>
-                            <span class="status-label status-label--pending">API pendiente</span>
+                            <span class="status-label status-label--pending">En desarrollo</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Acreditación con QR</h3>
-                                <p>La base genera un token firmado y valida el check-in en recepción.</p>
+                                <p>La base genera un token firmado y valida el check-in en recepción. Disponible para el personal autorizado de Secretaría.</p>
                             </div>
-                            <span class="status-label status-label--pending">API pendiente</span>
+                            <span class="status-label status-label--pending">Disponible</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Recordatorio 24 h antes</h3>
-                                <p>La cola se programa en PostgreSQL; falta el servicio que entregue correo, SMS o WhatsApp.</p>
+                                <p>La cola se programa en PostgreSQL; falta el servicio que entregue correo, SMS o WhatsApp. Aún no se envían recordatorios automáticos.</p>
                             </div>
-                            <span class="status-label status-label--pending">Entrega pendiente</span>
+                            <span class="status-label status-label--pending">Próximamente</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Consulta de citas</h3>
-                                <p>La vista de historial existe en la base y respeta al paciente autenticado.</p>
+                                <p>La vista de historial existe en la base y su consulta administrativa está disponible en recepción. La consulta desde el panel del paciente está en desarrollo.</p>
                             </div>
-                            <span class="status-label status-label--pending">Endpoint pendiente</span>
+                            <span class="status-label status-label--pending">En desarrollo</span>
                         </article>
                     </div>
                 </section>
@@ -194,7 +194,7 @@
             <div class="portal-cta__scrim" aria-hidden="true"></div>
             <div class="portal-cta__copy reveal">
                 <h2 id="cta-title">Tu próxima cita empieza aquí</h2>
-                <p>Ingresa al portal o crea una cuenta de paciente. La reserva se habilitará cuando la API de Quarkus esté disponible.</p>
+                <p>Ingresa al portal o crea una cuenta de paciente. La reserva web desde tu panel está en desarrollo; puedes solicitar un turno en recepción.</p>
                 <a class="button button--light" href="{{ route('register') }}">Crear cuenta</a>
             </div>
         </section>

@@ -4,6 +4,7 @@ import io.quarkus.hibernate.orm.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.clinica.dto.personal.EspecialidadDetalleDTO.MedicoVinculado;
+import org.clinica.dto.recepcion.RecepcionDtos.MedicoOpcion;
 import org.clinica.dto.personal.SecretariaRespuestaDTO;
 import org.clinica.entity.Medico;
 import org.clinica.entity.MedicoEspecialidad;
@@ -40,6 +41,18 @@ public class PersonalRepository implements PanacheRepositoryBase<Medico, String>
                     select me.id.codMed from MedicoEspecialidad me
                     where me.id.codEsp = ?1 and me.estado = 'Activo')
                 """, Sort.by("codMed"), codEsp);
+    }
+
+    public List<MedicoOpcion> listarMedicosReservables(String codEsp) {
+        return getEntityManager().createQuery("""
+                SELECT m.codMed,u.nombreCompleto,COALESCE(v.duracionConsultaMin,m.duracionConsultaMin,e.duracionConsultaMin)
+                FROM MedicoEspecialidad v JOIN Medico m ON m.codMed=v.id.codMed
+                JOIN Especialidad e ON e.codEsp=v.id.codEsp JOIN Usuario u ON u.codUsu=m.codUsu
+                JOIN Rol r ON r.codRol=u.codRol
+                WHERE e.codEsp=:esp AND e.estado='Activo' AND v.estado='Activo' AND m.estado='Activo'
+                  AND u.estado='Activo' AND u.codRol='ROL003' AND r.estado='Activo'
+                ORDER BY u.nombreCompleto,m.codMed
+                """, MedicoOpcion.class).setParameter("esp",codEsp).getResultList();
     }
 
     // ----- Secretarías -----

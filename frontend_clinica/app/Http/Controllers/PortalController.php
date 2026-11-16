@@ -14,7 +14,7 @@ class PortalController extends Controller
     {
         $specialties = [];
         $specialtiesState = 'not-configured';
-        $specialtiesMessage = 'La API de especialidades todavía no está expuesta por Quarkus.';
+        $specialtiesMessage = 'La API pública de especialidades todavía no está conectada al portal. En desarrollo.';
         $endpoint = config('clinic.endpoints.specialties');
 
         if (filled($endpoint)) {

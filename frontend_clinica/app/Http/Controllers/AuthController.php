@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Services\QuarkusApiClient;
+use GuzzleHttp\Exception\ConnectTimeoutException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
+use GuzzleHttp\Exception\ResponseTimeoutException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -27,12 +30,7 @@ class AuthController extends Controller
             return redirect()->route($this->homeRouteForRole((string) session('cod_rol')));
         }
 
-        $isDemoEnvironment = app()->environment(['local', 'demo']);
-
         return view('auth.login', [
-            'backendAvailable' => true,
-            'demoEnabled' => $isDemoEnvironment && config('clinic.demo.enabled'),
-            'demoUsers' => $isDemoEnvironment ? config('clinic.demo.users', []) : [],
             'googleEnabled' => (bool) config('clinic.features.google_oauth'),
         ]);
     }
@@ -159,6 +157,7 @@ class AuthController extends Controller
         }
 
         $data = $response->json('data');
+
         return match (data_get($data, 'status')) {
             'AUTHENTICATED' => $this->finishGoogleLogin($request, data_get($data, 'login')),
             'REGISTRATION_REQUIRED' => $this->continueGoogleRegistration($request, $data),
@@ -177,6 +176,7 @@ class AuthController extends Controller
                 'registration' => 'La continuación del registro con Google expiró.',
             ]);
         }
+
         return view('auth.google-register', [
             'googleName' => $request->session()->get('google_registration_name'),
             'googleEmail' => $request->session()->get('google_registration_email'),
@@ -230,6 +230,7 @@ class AuthController extends Controller
         if (data_get($data, 'status') === 'EMAIL_VERIFICATION_REQUIRED') {
             return $this->continueGoogleEmailVerification($request, $data);
         }
+
         return redirect()->route('login')->withErrors([
             'authentication' => 'El servicio respondió con un formato no reconocido.',
         ]);
@@ -313,15 +314,16 @@ class AuthController extends Controller
             $previous = $exception->getPrevious();
             $context = $previous !== null && is_callable([$previous, 'getHandlerContext'])
                 ? $previous->getHandlerContext() : [];
-            $isTimeout = $previous instanceof \GuzzleHttp\Exception\NetworkTimeoutException
-                || $previous instanceof \GuzzleHttp\Exception\ConnectTimeoutException
-                || $previous instanceof \GuzzleHttp\Exception\ResponseTimeoutException
+            $isTimeout = $previous instanceof NetworkTimeoutException
+                || $previous instanceof ConnectTimeoutException
+                || $previous instanceof ResponseTimeoutException
                 || (int) ($context['errno'] ?? 0) === 28;
             $errno = $isTimeout ? 28 : (int) ($context['errno'] ?? 0);
             Log::warning('Registration transport failure', [
                 'transport_errno' => $errno,
                 'elapsed_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
             ]);
+
             return back()
                 ->withInput($request->except(['password', 'password_confirmation']))
                 ->withErrors(['registration' => $errno === 28
@@ -480,6 +482,7 @@ class AuthController extends Controller
                     : 'El servicio de recuperación no está disponible. Intenta nuevamente.',
             ]);
         }
+
         return back()->with('success', (string) data_get(
             $response->json(),
             'data.message',
@@ -522,6 +525,7 @@ class AuthController extends Controller
         }
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect()->route('login')->with('success',
             'Contraseña actualizada. Inicia sesión nuevamente.');
     }
@@ -563,6 +567,7 @@ class AuthController extends Controller
             'intent' => $intent,
             'expires_at' => time() + 600,
         ]);
+
         return redirect()->away($authorizationUrl);
     }
 
@@ -576,6 +581,7 @@ class AuthController extends Controller
             ]);
         }
         $this->establishSession($request, $payload);
+
         return redirect()->route('paciente.home')->with('success', 'Sesión iniciada con Google.');
     }
 
@@ -592,6 +598,7 @@ class AuthController extends Controller
             'google_registration_name' => data_get($data, 'suggestedName'),
             'google_registration_email' => data_get($data, 'email'),
         ]);
+
         return redirect()->route('google.registration');
     }
 
@@ -604,6 +611,7 @@ class AuthController extends Controller
             ]);
         }
         $request->session()->put('google_link_token', $token);
+
         return redirect()->route('login')->with('warning',
             'Ese correo ya tiene una cuenta. Inicia sesión con tu contraseña para confirmar la vinculación con Google.');
     }
@@ -615,6 +623,7 @@ class AuthController extends Controller
                 'verification' => 'No fue posible iniciar la verificación del correo.',
             ]);
         }
+
         return redirect()->route('verification.email')
             ->with('success', $this->verificationIssuedMessage(data_get($data, 'verification')));
     }
@@ -639,8 +648,7 @@ class AuthController extends Controller
     {
         return match ($code) {
             'GOOGLE_OAUTH_NOT_CONFIGURED' => 'El acceso con Google todavía no está configurado.',
-            'GOOGLE_AUTHENTICATION_FAILED', 'GOOGLE_ID_TOKEN_INVALID' =>
-                'Google no pudo validar la autorización. Inicia el proceso nuevamente.',
+            'GOOGLE_AUTHENTICATION_FAILED', 'GOOGLE_ID_TOKEN_INVALID' => 'Google no pudo validar la autorización. Inicia el proceso nuevamente.',
             'GOOGLE_PROVIDER_UNAVAILABLE' => 'Google no está disponible temporalmente.',
             default => 'No fue posible continuar con Google.',
         };
@@ -662,8 +670,7 @@ class AuthController extends Controller
             'INVALID_CREDENTIALS' => 'Correo o contraseña incorrectos.',
             'TOO_MANY_ATTEMPTS' => 'Se alcanzó el límite de intentos. Espera antes de volver a intentarlo.',
             'ACCOUNT_TEMPORARILY_BLOCKED' => 'La cuenta está bloqueada temporalmente. Contacta con la clínica si necesitas ayuda.',
-            'ACCOUNT_DISABLED', 'PROFILE_DISABLED', 'ROLE_DISABLED', 'PROFILE_UNAVAILABLE' =>
-                'La cuenta no está habilitada. Contacta con la administración de la clínica.',
+            'ACCOUNT_DISABLED', 'PROFILE_DISABLED', 'ROLE_DISABLED', 'PROFILE_UNAVAILABLE' => 'La cuenta no está habilitada. Contacta con la administración de la clínica.',
             'ROLE_NOT_ALLOWED' => 'La cuenta no tiene un rol autorizado para este sistema.',
             'EMAIL_VERIFICATION_REQUIRED' => 'Debes verificar tu correo antes de iniciar sesión.',
             default => $status >= 500
@@ -678,8 +685,7 @@ class AuthController extends Controller
             'EMAIL_ALREADY_REGISTERED' => 'El correo ya está registrado.',
             'DOCUMENT_ALREADY_REGISTERED' => 'El documento ya está registrado.',
             'GOOGLE_ACCOUNT_CONFLICT' => 'No fue posible completar el registro con esa identidad de Google.',
-            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' =>
-                'La cuenta no pudo crearse porque la entrega OTP no está disponible. Intenta nuevamente más tarde.',
+            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' => 'La cuenta no pudo crearse porque la entrega OTP no está disponible. Intenta nuevamente más tarde.',
             'VALIDATION_ERROR' => 'Revisa los datos ingresados e intenta nuevamente.',
             default => $status >= 500
                 ? 'El servicio de registro presentó un error. Intenta nuevamente.'
@@ -693,13 +699,11 @@ class AuthController extends Controller
             'OTP_INVALID_OR_EXPIRED' => 'El código no es válido, expiró o alcanzó el límite de intentos.',
             'OTP_FORMAT_INVALID' => 'Ingresa los seis dígitos del código.',
             'OTP_RESEND_TOO_SOON' => 'Espera al menos 60 segundos antes de solicitar otro código.',
-            'OTP_HOURLY_LIMIT_REACHED', 'TOO_MANY_ATTEMPTS' =>
-                'Se alcanzó el límite temporal de solicitudes. Intenta más tarde.',
+            'OTP_HOURLY_LIMIT_REACHED', 'TOO_MANY_ATTEMPTS' => 'Se alcanzó el límite temporal de solicitudes. Intenta más tarde.',
             'INVALID_VERIFICATION_CHALLENGE' => 'La solicitud expiró. Inicia nuevamente la verificación.',
             'INVALID_VERIFICATION_CREDENTIALS' => 'No fue posible iniciar la verificación con esos datos.',
             'EMAIL_ALREADY_VERIFIED' => 'El correo ya fue verificado. Puedes iniciar sesión.',
-            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' =>
-                'La entrega del código por correo no está disponible.',
+            'OTP_PROVIDER_UNAVAILABLE', 'OTP_DEMO_NOT_ALLOWED', 'OTP_SMTP_NOT_CONFIGURED', 'OTP_DELIVERY_FAILED' => 'La entrega del código por correo no está disponible.',
             default => $status >= 500
                 ? 'El servicio de verificación presentó un error. Intenta nuevamente.'
                 : 'No fue posible procesar la verificación.',
