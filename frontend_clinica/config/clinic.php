@@ -23,38 +23,12 @@ return [
         'sunday' => env('CLINIC_HOURS_SUNDAY'),
     ],
 
-    'endpoints' => [
-        'specialties' => env('QUARKUS_SPECIALTIES_ENDPOINT'),
-        'login' => env('QUARKUS_LOGIN_ENDPOINT', 'auth/login'),
-        'me' => env('QUARKUS_ME_ENDPOINT', 'auth/me'),
-        'authorize' => env('QUARKUS_AUTHORIZE_ENDPOINT', 'auth/authorize'),
-        'logout' => env('QUARKUS_LOGOUT_ENDPOINT', 'auth/logout'),
-        'register' => env('QUARKUS_REGISTER_ENDPOINT', 'auth/register'),
-        'request_otp' => env('QUARKUS_REQUEST_OTP_ENDPOINT', 'auth/otp/request'),
-        'verify_otp' => env('QUARKUS_VERIFY_OTP_ENDPOINT', 'auth/otp/verify'),
-        'resend_otp' => env('QUARKUS_RESEND_OTP_ENDPOINT', 'auth/otp/resend'),
-        'otp_status' => env('QUARKUS_OTP_STATUS_ENDPOINT', 'auth/otp/status'),
-        'google_authorization' => env('QUARKUS_GOOGLE_AUTHORIZATION_ENDPOINT', 'auth/google/authorization-url'),
-        'google_exchange' => env('QUARKUS_GOOGLE_EXCHANGE_ENDPOINT', 'auth/google/exchange'),
-        'google_register' => env('QUARKUS_GOOGLE_REGISTER_ENDPOINT', 'auth/google/register'),
-        'google_link' => env('QUARKUS_GOOGLE_LINK_ENDPOINT', 'auth/google/link'),
-        'password_forgot' => env('QUARKUS_PASSWORD_FORGOT_ENDPOINT', 'auth/password/forgot'),
-        'password_reset' => env('QUARKUS_PASSWORD_RESET_ENDPOINT', 'auth/password/reset'),
-    ],
-
     'features' => [
         'google_oauth' => env('CLINIC_GOOGLE_OAUTH_ENABLED', false),
+        'google_client_id' => env('GOOGLE_CLIENT_ID'),
+        'google_client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'google_redirect_uri' => env('GOOGLE_REDIRECT_URI', 'http://127.0.0.1:8000/auth/google/callback'),
         'email_verification' => env('CLINIC_EMAIL_VERIFICATION_ENABLED', false),
     ],
 
-    'demo' => [
-        'enabled' => env('CLINIC_DEMO_ENABLED', true),
-        'users' => [
-            ['role' => 'Paciente', 'role_code' => 'ROL001', 'name' => 'Samuel Paciente', 'email' => 'samuel.paciente@unifranz.edu.bo'],
-            ['role' => 'Secretaría', 'role_code' => 'ROL002', 'name' => 'Angela Secretaria', 'email' => 'angela.secretaria@clinica.bo'],
-            ['role' => 'Médico', 'role_code' => 'ROL003', 'name' => 'Dr. Dilan Doctor', 'email' => 'dilan.doctor@clinica.bo'],
-            ['role' => 'Administración', 'role_code' => 'ROL004', 'name' => 'Yesid Administrador', 'email' => 'yesid.admin@clinica.bo'],
-        ],
-    ],
 ];

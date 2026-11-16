@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Secretaria;
 
-use App\Exceptions\QuarkusApiException;
+use App\Exceptions\ClinicalOperationException;
 use App\Http\Requests\Secretaria\CheckinRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -18,7 +18,7 @@ class CheckinController extends ReceptionController
     {
         try {
             $attendance = $this->write('checkin', $request->safe()->only('tokenQr'), 'En Espera');
-        } catch (QuarkusApiException $exception) {
+        } catch (ClinicalOperationException $exception) {
             if (! in_array($exception->status, [400, 409, 422, 502, 503], true)) {
                 throw $exception;
             }

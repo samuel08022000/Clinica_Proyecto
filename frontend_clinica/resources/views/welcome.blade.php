@@ -88,7 +88,7 @@
                 <section id="especialidades" class="portal-section specialties-section reveal-group" aria-labelledby="specialties-title">
                     <div class="section-heading reveal">
                         <h2 id="specialties-title">Especialidades</h2>
-                        <p>El catálogo se muestra únicamente cuando Quarkus expone especialidades activas.</p>
+                        <p>El catálogo se muestra únicamente cuando la clínica expone especialidades activas.</p>
                     </div>
 
                     @if ($specialtiesState === 'ready')
@@ -271,7 +271,7 @@
             </nav>
             <div class="site-footer__legal">
                 <p>© {{ now()->year }} {{ $clinic['identity']['name'] }}.</p>
-                <p>Portal Laravel conectado a servicios Quarkus.</p>
+                <p>Portal clínico institucional.</p>
             </div>
         </div>
     </footer>

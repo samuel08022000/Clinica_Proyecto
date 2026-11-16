@@ -18,7 +18,7 @@
             <a class="back-link" href="{{ route('login') }}">Volver al acceso</a>
             <header class="form-heading">
                 <h1 id="reset-title">Define una nueva contraseña</h1>
-                <p>El token del enlace y la dirección de correo se validarán en Quarkus antes de realizar cualquier cambio.</p>
+                <p>El token del enlace y la dirección de correo se validarán antes de realizar cualquier cambio.</p>
             </header>
 
             @include('layouts.alerts')

@@ -1,0 +1,41 @@
+name: clinica-laravel-fase1
+
+# Independiente de los servicios históricos. Nunca reutilizar pgdata.
+services:
+  postgres_clinical:
+    image: postgres:16-alpine
+    pull_policy: never
+    container_name: clinica-laravel-fase1-pg16
+    restart: "no"
+    environment:
+      POSTGRES_DB: clinica_laravel
+      POSTGRES_USER: clinica_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/bootstrap_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      TZ: America/La_Paz
+      PGTZ: America/La_Paz
+    command: ["postgres", "-c", "timezone=America/La_Paz"]
+    ports:
+      - "127.0.0.1:35443:5432"
+    volumes:
+      - clinical_pg16_data:/var/lib/postgresql/data
+    secrets:
+      - bootstrap_password
+    labels:
+      clinica.environment: laravel-phase1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinica_bootstrap -d clinica_laravel"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  clinical_pg16_data:
+    name: clinica_laravel_fase1_pg16_data
+    labels:
+      clinica.environment: laravel-phase1
+
+secrets:
+  bootstrap_password:
+    file: ./.local/clinical-phase1/bootstrap-password.txt

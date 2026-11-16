@@ -1,7 +1,7 @@
-@props(['name', 'label', 'type' => 'text', 'value' => '', 'required' => false, 'help' => null, 'options' => [], 'id' => null])
+@props(['name', 'label', 'type' => 'text', 'value' => '', 'required' => false, 'help' => null, 'options' => [], 'id' => null, 'showErrors' => true])
 @php
     $id = $id ?? str_replace(['.', '[', ']'], '-', $name);
-    $invalid = $errors->has($name);
+    $invalid = $showErrors && $errors->has($name);
     $current = $type === 'password' ? '' : old($name, $value);
     $described = trim(($help ? $id.'-help ' : '').($invalid ? $id.'-error' : ''));
 @endphp
@@ -17,5 +17,7 @@
         <input type="{{ $type }}" name="{{ $name }}" id="{{ $id }}" value="{{ $current }}" @required($required) @if($invalid) aria-invalid="true" @endif @if($described) aria-describedby="{{ $described }}" @endif {{ $attributes }}>
     @endif
     @if($help)<p id="{{ $id }}-help" class="a-help">{{ $help }}</p>@endif
-    @error($name)<p id="{{ $id }}-error" class="a-field-error">{{ $message }}</p>@enderror
+    @if($showErrors)
+        @error($name)<p id="{{ $id }}-error" class="a-field-error">{{ $message }}</p>@enderror
+    @endif
 </div>

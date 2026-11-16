@@ -44,7 +44,5 @@
         <server name="PULSE_ENABLED" value="false"/>
         <server name="TELESCOPE_ENABLED" value="false"/>
         <server name="NIGHTWATCH_ENABLED" value="false"/>
-        <env name="QUARKUS_API_URL" value="http://quarkus.test/api/v1" force="true"/>
-        <server name="QUARKUS_API_URL" value="http://quarkus.test/api/v1"/>
     </php>
 </phpunit>

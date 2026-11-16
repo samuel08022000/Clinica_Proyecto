@@ -8,7 +8,7 @@ class DashboardController extends ReceptionController
 {
     public function __invoke(): View
     {
-        // Omitting dates delegates "today" to public.fecha_clinica() in Quarkus.
+        // Omitir fechas delega "hoy" a public.fecha_clinica() en PostgreSQL.
         $page = $this->read('citas', ['page' => 0, 'size' => 20]);
 
         return view('secretaria.dashboard', compact('page'));

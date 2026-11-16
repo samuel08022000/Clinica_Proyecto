@@ -1,4 +1,5 @@
 # Herramientas locales de desarrollo
+.agent/
 .agents/
 .claude/
 .mcp.json
@@ -7,3 +8,16 @@ boost.json
 
 # Credenciales locales de Docker; nunca se versionan.
 /.env
+
+# Estado privado, respaldos y credenciales del PostgreSQL Laravel aislado.
+/.local/clinical-phase1/
+
+# Respaldos y exportaciones locales privadas
+.integration-backups/
+*.zip
+*.tar.gz
+*.dump
+*.bak
+
+# Documento local excluido expresamente del repositorio
+EVALUACION PROCESUAL.pdf

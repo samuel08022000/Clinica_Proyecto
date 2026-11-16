@@ -11,7 +11,7 @@ class EspecialidadController extends AdminController
     public function index(Request $request)
     {
         $filters = $request->validate(['estado' => ['nullable', 'in:Activo,Inactivo,Todos'], 'q' => ['nullable', 'string', 'max:120']]);
-        $rows = $this->api->administrative('GET', 'personal/especialidades', ['estado' => $filters['estado'] ?? 'Todos']);
+        $rows = $this->backend->request('GET', 'personal/especialidades', ['estado' => $filters['estado'] ?? 'Todos']);
         if (filled($filters['q'] ?? null)) {
             $rows = array_values(array_filter($rows, fn (array $row): bool => str_contains(mb_strtolower($row['nombreEspecialidad']), mb_strtolower($filters['q']))));
         }
@@ -34,15 +34,15 @@ class EspecialidadController extends AdminController
 
     public function show(string $codigo)
     {
-        $record = $this->api->administrative('GET', 'personal/especialidades/'.$codigo);
-        $doctors = $this->api->administrative('GET', 'personal/especialidades/'.$codigo.'/medicos');
+        $record = $this->backend->request('GET', 'personal/especialidades/'.$codigo);
+        $doctors = $this->backend->request('GET', 'personal/especialidades/'.$codigo.'/medicos');
 
         return view('administracion.especialidades.show', compact('record', 'doctors'));
     }
 
     public function edit(string $codigo)
     {
-        return view('administracion.especialidades.form', ['record' => $this->api->administrative('GET', 'personal/especialidades/'.$codigo)]);
+        return view('administracion.especialidades.form', ['record' => $this->backend->request('GET', 'personal/especialidades/'.$codigo)]);
     }
 
     public function update(EspecialidadRequest $request, string $codigo)

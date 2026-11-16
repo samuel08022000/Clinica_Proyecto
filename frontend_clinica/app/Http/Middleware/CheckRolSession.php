@@ -2,86 +2,73 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\QuarkusApiClient;
+use App\Exceptions\AuthDomainException;
+use App\Models\Usuario;
+use App\Services\Auth\AccountStatusService;
+use App\Services\Auth\SessionService;
 use Closure;
-use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use PDOException;
 use Symfony\Component\HttpFoundation\Response;
 
-class CheckRolSession
+final class CheckRolSession
 {
-    public function __construct(private readonly QuarkusApiClient $apiClient) {}
+    public function __construct(
+        private AuthFactory $auth,
+        private AccountStatusService $status,
+        private SessionService $sessions,
+    ) {}
 
-    public function handle(Request $request, Closure $next, string ...$rolesPermitidos): Response
+    public function handle(Request $request, Closure $next, string ...$allowedRoles): Response
     {
-        if (! $request->session()->has(['auth_token', 'cod_usu', 'cod_rol'])) {
-            return redirect()->route('login')->withErrors(['authentication' => 'Debes iniciar sesión para continuar.']);
+        $user = $this->auth->guard('web')->user();
+        if (! $user instanceof Usuario || $request->session()->get('auth_authority') !== 'laravel'
+            || $request->session()->get('cod_usu') !== $user->cod_usu) {
+            return $this->invalid($request, 'Debes iniciar sesión para continuar.');
         }
-
+        $expiresAt = $request->session()->get('auth_expires_at');
+        if (! is_string($expiresAt) || now()->greaterThanOrEqualTo($expiresAt)) {
+            return $this->invalid($request, 'Tu sesión expiró. Inicia sesión nuevamente.');
+        }
         try {
-            $response = empty($rolesPermitidos)
-                ? $this->apiClient->authenticatedUser()
-                : $this->apiClient->authorizeRoles($rolesPermitidos);
-        } catch (ConnectionException) {
-            return $this->serviceUnavailable();
+            $account = $this->status->requireActive($user->cod_usu);
+        } catch (AuthDomainException) {
+            $this->sessions->revokeAllForUser($user->cod_usu);
+
+            return $this->invalid($request, 'Tu cuenta o perfil ya no está habilitado.');
+        } catch (QueryException|PDOException) {
+            return response(
+                'No fue posible validar la sesión con la base clínica. Tu sesión se conserva; reintenta en unos momentos.',
+                503,
+            )->header('Retry-After', '30');
         }
-
-        if ($response->serverError() || $response->status() === 404) {
-            return $this->serviceUnavailable();
-        }
-
-        if ($response->status() === 403
-            && data_get($response->json(), 'error.code') === 'FORBIDDEN') {
-            abort(403, 'Acceso denegado: tu rol no tiene permisos para este módulo.');
-        }
-
-        if (! $response->successful()) {
-            return $this->endInvalidSession(
-                $request,
-                $response->status() === 401
-                    ? 'Tu sesión expiró o fue revocada. Inicia sesión nuevamente.'
-                    : 'Tu cuenta ya no está habilitada para acceder.'
-            );
-        }
-
-        $payload = $response->json('data');
-        $codUsu = data_get($payload, 'user.id');
-        $rolActual = data_get($payload, 'user.role.code');
-
-        if (! is_string($codUsu) || ! is_string($rolActual)
-            || $codUsu !== $request->session()->get('cod_usu')) {
-            return $this->endInvalidSession($request, 'La sesión no pudo validarse de forma segura.');
-        }
-
         $request->session()->put([
-            'cod_rol' => $rolActual,
-            'nombre_usuario' => data_get($payload, 'user.name'),
-            'email_usuario' => data_get($payload, 'user.email'),
-            'nombre_rol' => data_get($payload, 'user.role.name'),
-            'rol_slug' => data_get($payload, 'user.role.slug'),
-            'estado_cuenta' => data_get($payload, 'user.accountStatus'),
-            'auth_expires_at' => data_get($payload, 'expiresAt'),
+            'cod_rol' => $account->cod_rol,
+            'nombre_usuario' => $account->nombre_completo,
+            'email_usuario' => $account->email,
+            'nombre_rol' => $account->nombre_rol,
+            'rol_slug' => SessionService::roleSlug($account->cod_rol),
+            'estado_cuenta' => $account->perfil_estado,
         ]);
-
-        if (! empty($rolesPermitidos) && ! in_array($rolActual, $rolesPermitidos, true)) {
+        if ($allowedRoles !== [] && ! in_array($account->cod_rol, $allowedRoles, true)) {
             abort(403, 'Acceso denegado: tu rol no tiene permisos para este módulo.');
         }
 
-        return $next($request);
+        $response = $next($request);
+        if (! $response->isRedirection() && ! $response->headers->hasCacheControlDirective('no-store')) {
+            $response->headers->set('Cache-Control', 'no-store, private');
+            $response->headers->set('Pragma', 'no-cache');
+        }
+
+        return $response;
     }
 
-    private function endInvalidSession(Request $request, string $message): Response
+    private function invalid(Request $request, string $message): Response
     {
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $this->sessions->logout($request);
 
         return redirect()->route('login')->withErrors(['authentication' => $message]);
-    }
-
-    private function serviceUnavailable(): Response
-    {
-        return response('No fue posible validar tu sesión porque el servicio de acceso no está disponible. Reintenta en unos momentos.', 503)
-            ->header('Retry-After', '30')
-            ->header('Cache-Control', 'no-store');
     }
 }

@@ -1,0 +1,37 @@
+/* El módulo Médico conserva el framed-sheet y los tokens del workspace existente. */
+.medico-page .m-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.medico-page .m-agenda-lead { margin-top: var(--space-2); }
+.medico-page .m-section-heading { display: flex; align-items: start; justify-content: space-between; gap: var(--space-4); }
+.medico-page .m-section-heading > div { min-width: 0; }
+.medico-page .m-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.medico-page .m-date-filter .a-field { max-width: 16rem; }
+.medico-page .m-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.medico-page .m-single-details { grid-template-columns: minmax(0, 1fr); }
+.medico-page .m-write-form { margin-top: var(--space-5); }
+.medico-page .m-record-list { display: grid; gap: var(--space-1); }
+.medico-page .m-record-list > a { display: flex; min-height: 4rem; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3); border-radius: var(--radius-small); background: var(--slate-50); text-decoration: none; }
+.medico-page .m-record-list > a:hover strong { text-decoration: underline; }
+.medico-page .m-record-list span:first-child { min-width: 0; }
+.medico-page .m-record-list strong, .medico-page .m-record-list small { display: block; }
+.medico-page .m-record-list small { color: var(--muted); }
+.medico-page .m-analysis-request { margin-top: var(--space-4); max-width: 42rem; }
+.medico-page .m-analysis-card { display: grid; gap: var(--space-4); scroll-margin-top: var(--space-6); }
+.medico-page .m-result { padding: var(--space-4); border-radius: var(--radius-small); background: var(--active); }
+.medico-page .m-result h3 { margin-bottom: var(--space-2); }
+.medico-page .m-result p { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.medico-page .m-analysis-actions { display: grid; gap: var(--space-3); }
+.medico-page .m-analysis-actions .a-state { padding: var(--space-3); border-radius: var(--radius-small); background: var(--active); }
+.medico-page .m-analysis-actions .a-form { max-width: 52rem; }
+
+@media (max-width: 68.75rem) {
+    .medico-page .m-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .medico-page .m-metrics > a:nth-child(2) { border-right: 0; }
+    .medico-page .m-metrics > a:nth-child(-n + 2) { border-bottom: 1px solid var(--border); } /* taste-skill-ignore: continuidad con la cuadrícula métrica existente */
+}
+
+@media (max-width: 40rem) {
+    .medico-page .m-metrics, .medico-page .m-detail-grid { grid-template-columns: minmax(0, 1fr); }
+    .medico-page .m-section-heading { align-items: stretch; flex-direction: column; }
+    .medico-page .m-date-filter .a-field { max-width: none; }
+    .medico-page .m-record-list > a { align-items: flex-start; }
+}

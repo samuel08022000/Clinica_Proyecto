@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import './administracion.css';
 @import './secretaria.css';
+@import './medico.css';
+@import './paciente.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';

@@ -2,16 +2,91 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Testing\TestResponse;
+use App\Exceptions\AuthDomainException;
+use App\Exceptions\ClinicalOperationException;
+use App\Models\Usuario;
+use App\Services\Administration\AdministrationService;
+use App\Services\Auth\AccountStatusService;
+use Illuminate\Database\QueryException;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\AdministrativeFixtures as F;
 use Tests\TestCase;
 
 class AdministracionPanelTest extends TestCase
 {
+    private ?int $failureStatus = null;
+
+    private string $failureMessage = 'La edición afecta citas futuras; conserva el horario actual.';
+
+    private ?\Closure $override = null;
+
+    private string $authorizationRole = 'ROL004';
+
+    private ?int $authorizationStatus = null;
+
+    private bool $authorizationOffline = false;
+
+    /** @var array<int, array{method: string, path: string, data: array}> */
+    private array $recorded = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutVite();
+
+        $accounts = Mockery::mock(AccountStatusService::class);
+        $accounts->shouldReceive('requireActive')->andReturnUsing(function (string $userId): object {
+            if ($this->authorizationOffline) {
+                throw new QueryException('clinical', 'SELECT 1', [], new \PDOException('SQLSTATE[08006] down'));
+            }
+            if ($this->authorizationStatus === 401) {
+                throw new AuthDomainException('ACCOUNT_NOT_FOUND', 401, 'La cuenta ya no está disponible.');
+            }
+            if ($this->authorizationStatus === 403) {
+                throw new AuthDomainException('ROLE_DISABLED', 403, 'Acceso denegado.');
+            }
+
+            return (object) [
+                'cod_usu' => $userId,
+                'nombre_completo' => 'María Administradora',
+                'email' => 'maria@example.test',
+                'cod_rol' => $this->authorizationRole,
+                'nombre_rol' => 'Administrador',
+                'usuario_estado' => 'Activo',
+                'rol_estado' => 'Activo',
+                'perfil_presente' => true,
+                'perfil_estado' => 'Activo',
+                'email_verificado' => true,
+                'bloqueado_hasta' => null,
+            ];
+        });
+        $this->app->instance(AccountStatusService::class, $accounts);
+
+        $adminService = Mockery::mock(AdministrationService::class);
+        $adminService->shouldReceive('request')->andReturnUsing(function (string $method, string $path, array $data = []): array {
+            $normalizedPath = '/'.ltrim($path, '/');
+            $this->recorded[] = ['method' => $method, 'path' => $normalizedPath, 'data' => $data];
+
+            if ($this->override && ($result = ($this->override)($method, $normalizedPath, $data)) !== null) {
+                return $result;
+            }
+            if ($this->failureStatus) {
+                throw new ClinicalOperationException(
+                    $this->failureStatus >= 500 ? 503 : $this->failureStatus,
+                    $this->failureMessage,
+                    'CLINICAL_ERROR',
+                );
+            }
+            if ($method === 'GET') {
+                return F::get($normalizedPath);
+            }
+
+            return ['codBlo' => 'BLO000001'];
+        });
+        $this->app->instance(AdministrationService::class, $adminService);
+    }
+
     public static function blockReasonBoundaries(): array
     {
         return ['backend maximum' => [500, true], 'exceeds backend maximum' => [501, false]];
@@ -28,11 +103,13 @@ class AdministracionPanelTest extends TestCase
 
         if ($valid) {
             $response->assertSessionHasNoErrors()->assertRedirect('/administracion/bloqueos/BLO000001');
-            Http::assertSent(fn (Request $request): bool => $request->method() === 'POST' && $request['motivo'] === $reason);
+            $this->assertContains('POST', array_column($this->recorded, 'method'));
+            $post = collect($this->recorded)->firstWhere('method', 'POST');
+            $this->assertSame($reason, $post['data']['motivo']);
         } else {
             $response->assertRedirect('/administracion/bloqueos/medicos/MED000001/crear')
                 ->assertSessionHasErrors('motivo')->assertSessionHasInput('motivo', $reason);
-            Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST');
+            $this->assertEmpty(array_filter($this->recorded, fn ($entry) => $entry['method'] === 'POST'));
         }
     }
 
@@ -42,73 +119,28 @@ class AdministracionPanelTest extends TestCase
             ->assertOk()->assertSee('maxlength="500"', false);
     }
 
-    private ?int $failureStatus = null;
-
-    private string $failureMessage = 'La edición afecta citas futuras; conserva el horario actual.';
-
-    private ?\Closure $override = null;
-
-    private string $authorizationRole = 'ROL004';
-
-    private ?int $authorizationStatus = null;
-
-    private bool $authorizationOffline = false;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        if (getenv('CLINICA_ADMIN_SNAPSHOTS') === '1') {
-            $this->withVite();
-        } else {
-            $this->withoutVite();
-        }
-        config(['services.quarkus.base_url' => 'http://localhost:8080/api/v1']);
-        Http::preventStrayRequests();
-        Http::fake(function (Request $request) {
-            $path = str_replace('/api/v1', '', parse_url($request->url(), PHP_URL_PATH));
-            if ($path === '/auth/authorize') {
-                if ($this->authorizationOffline) {
-                    throw new ConnectionException('down');
-                }
-                if ($this->authorizationStatus) {
-                    return Http::response(['error' => ['code' => 'INVALID_SESSION']], $this->authorizationStatus);
-                }
-
-                return Http::response(F::authorization($this->authorizationRole));
-            }
-            if ($this->override && ($response = ($this->override)($request, $path)) !== null) {
-                return $response;
-            }
-            if ($this->failureStatus) {
-                return Http::response(['ok' => false, 'error' => 'CONFLICTO', 'mensaje' => $this->failureMessage], $this->failureStatus);
-            }
-            if ($request->method() === 'GET') {
-                return Http::response(F::get($path));
-            }
-            if (str_ends_with($path, '/password')) {
-                return Http::response('', 204);
-            }
-
-            return Http::response(['codBlo' => 'BLO000001'], $request->method() === 'POST' ? 201 : 200);
-        });
-    }
-
     private function admin(): static
     {
-        return $this->withSession(['auth_token' => 'opaque-admin-test', 'cod_usu' => 'USU000004', 'cod_rol' => 'ROL004']);
-    }
+        $user = new Usuario;
+        $user->forceFill([
+            'cod_usu' => 'USU000004',
+            'cod_rol' => $this->authorizationRole,
+            'nombre_completo' => 'María Administradora',
+            'email' => 'maria@example.test',
+            'estado' => 'Activo',
+        ]);
 
-    private function snapshot(string $name, TestResponse $response): void
-    {
-        if (getenv('CLINICA_ADMIN_SNAPSHOTS') !== '1') {
-            return;
-        }
-        $directory = storage_path('app/private/fase10/snapshots');
-        if (! is_dir($directory)) {
-            mkdir($directory, 0700, true);
-        }
-        file_put_contents($directory.'/'.$name.'.html', preg_replace('~(?:https?://[^/\s"\x27]+)?/build/~',
-            '/frontend_clinica/public/build/', $response->getContent()));
+        return $this->actingAs($user, 'web')->withSession([
+            'auth_authority' => 'laravel',
+            'auth_expires_at' => now()->addMinutes(120)->toIso8601String(),
+            'cod_usu' => 'USU000004',
+            'cod_rol' => $this->authorizationRole,
+            'nombre_usuario' => 'María Administradora',
+            'email_usuario' => 'maria@example.test',
+            'nombre_rol' => 'Administrador',
+            'rol_slug' => 'administracion',
+            'estado_cuenta' => 'Activo',
+        ]);
     }
 
     public static function screens(): array
@@ -145,33 +177,14 @@ class AdministracionPanelTest extends TestCase
     }
 
     #[DataProvider('screens')]
-    public function test_admin_screens_render_contract_data_without_exposing_token(string $path, string $expected): void
+    public function test_admin_screens_render_contract_data_without_exposing_credentials(string $path, string $expected): void
     {
-        $export = getenv('CLINICA_ADMIN_SNAPSHOTS') === '1';
-        if ($export) {
-            $this->withVite();
-        }
-        $response = $this->admin()->get($path)->assertOk()->assertSee($expected)->assertDontSee('opaque-admin-test')
+        $this->admin()->get($path)->assertOk()->assertSee($expected)
             ->assertSee('María Administradora')->assertHeader('Cache-Control', 'no-store, private')
             ->assertSee('<h1', false)->assertSee('id="contenido-principal"', false)->assertDontSee('@endsection');
-        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer opaque-admin-test'));
-        if ($export) {
-            $directory = storage_path('app/private/fase10/snapshots');
-            if (! is_dir($directory)) {
-                mkdir($directory, 0700, true);
-            }
-            $name = array_search([$path, $expected], self::screens(), true);
-            $html = preg_replace('~(?:https?://[^/\s"\x27]+)?/build/~', '/frontend_clinica/public/build/', $response->getContent());
-            file_put_contents($directory.'/'.$name.'.html', $html);
-            if ($name === 'dashboard') {
-                $before = view('dashboard.home', ['user' => ['roleName' => 'Administrador', 'roleCode' => 'ROL004',
-                    'accountStatus' => 'Activo', 'name' => 'María Administradora', 'email' => 'maria@example.test']])->render();
-                file_put_contents($directory.'/before.html', preg_replace('~(?:https?://[^/\s"\x27]+)?/build/~', '/frontend_clinica/public/build/', $before));
-            }
-        }
     }
 
-    public function test_every_admin_route_has_remote_role_authorization_and_no_guest_access(): void
+    public function test_every_admin_route_has_role_authorization_and_no_guest_access(): void
     {
         foreach (app('router')->getRoutes() as $route) {
             if (! str_starts_with($route->getName() ?? '', 'administracion.')) {
@@ -181,7 +194,7 @@ class AdministracionPanelTest extends TestCase
         }
         $this->get('/administracion/medicos')->assertRedirect(route('login'));
         $this->post('/administracion/medicos', [])->assertRedirect(route('login'));
-        Http::assertNothingSent();
+        $this->assertEmpty($this->recorded);
     }
 
     public static function otherRoles(): array
@@ -190,27 +203,25 @@ class AdministracionPanelTest extends TestCase
     }
 
     #[DataProvider('otherRoles')]
-    public function test_remote_role_mismatch_rejects_reads_and_writes(string $role): void
+    public function test_role_mismatch_rejects_reads_and_writes(string $role): void
     {
         $this->authorizationRole = $role;
-        $this->withSession(['auth_token' => 'other-token', 'cod_usu' => 'USU000004', 'cod_rol' => $role])
-            ->get('/administracion/pacientes')->assertForbidden();
+        $this->admin()->get('/administracion/pacientes')->assertForbidden();
         $this->post('/administracion/pacientes/PAC000001/sanciones', ['motivo' => 'Intento', 'dias' => 7, 'confirmacion' => 1])->assertForbidden();
-        Http::assertNotSent(fn (Request $request): bool => ! str_contains($request->url(), '/auth/authorize'));
+        $this->assertEmpty($this->recorded);
     }
 
     public function test_revoked_session_is_invalidated_before_any_action(): void
     {
         $this->authorizationStatus = 401;
-        $this->admin()->get('/administracion/medicos')->assertRedirect(route('login'))->assertSessionMissing('auth_token');
+        $this->admin()->get('/administracion/medicos')->assertRedirect(route('login'))->assertSessionMissing('cod_usu');
     }
 
     public function test_authorization_outage_fails_closed_preserving_session(): void
     {
         $this->authorizationOffline = true;
-        $response = $this->admin()->post('/administracion/pacientes/PAC000001/sanciones', ['motivo' => 'Motivo', 'dias' => 7, 'confirmacion' => 1])
-            ->assertStatus(503)->assertSee('Tu sesión se conserva')->assertSessionHas('auth_token')->assertDontSee('opaque-admin-test');
-        $this->snapshot('servicio-indisponible', $response);
+        $this->admin()->post('/administracion/pacientes/PAC000001/sanciones', ['motivo' => 'Motivo', 'dias' => 7, 'confirmacion' => 1])
+            ->assertStatus(503)->assertSee('Tu sesión se conserva')->assertSessionHas('cod_usu', 'USU000004');
     }
 
     public static function mutations(): array
@@ -250,53 +261,53 @@ class AdministracionPanelTest extends TestCase
     {
         $input += ['codUsuAdmin' => 'FORGED', 'role' => 'ROL001', 'codRol' => 'ROL004', 'registradoPorUsu' => 'FORGED'];
         $this->admin()->call($method, $path, $input)->assertRedirect()->assertSessionHas('success')->assertSessionHasNoErrors();
-        Http::assertSent(function (Request $request) use ($method, $endpoint, $keys): bool {
-            if ($request->method() !== $method || ! str_ends_with($request->url(), $endpoint)) {
-                return false;
-            }
-            $this->assertEqualsCanonicalizing($keys, array_keys($request->data()));
-            foreach (['dias', 'diaSemana', 'duracionConsultaMin'] as $key) {
-                if (isset($request[$key])) {
-                    $this->assertIsInt($request[$key]);
-                }
-            }
 
-            return $request->hasHeader('Authorization', 'Bearer opaque-admin-test');
-        });
+        $sent = collect($this->recorded)->first(fn ($entry) => $entry['method'] === $method && $entry['path'] === $endpoint);
+        $this->assertNotNull($sent, 'Expected service call '.$method.' '.$endpoint);
+        $this->assertEqualsCanonicalizing($keys, array_keys($sent['data']));
+        foreach (['dias', 'diaSemana', 'duracionConsultaMin'] as $key) {
+            if (isset($sent['data'][$key])) {
+                $this->assertIsInt($sent['data'][$key]);
+            }
+        }
         $this->assertStringNotContainsString('AccesoSeguro123', json_encode(session()->all()));
         if (str_ends_with($endpoint, '/password')) {
-            $success = $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/secretarias/SEC000001')
+            $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/secretarias/SEC000001')
                 ->assertOk()->assertSee('La operación se completó correctamente.')->assertDontSee('AccesoSeguro123');
-            $this->snapshot('secretario-exito', $success);
         }
     }
 
     public function test_catalog_state_and_search_filters_change_the_visible_result(): void
     {
         $this->admin()->get('/administracion/medicos?estado=Activo&q=no-coincide')->assertOk()->assertDontSee('lucia@example.test');
-        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/personal/medicos?estado=Activo'));
+        $doctorsCall = collect($this->recorded)->firstWhere('path', '/personal/medicos');
+        $this->assertSame('Activo', $doctorsCall['data']['estado'] ?? null);
+
         $this->get('/administracion/especialidades?estado=Todos&q=Medicina')->assertOk()->assertSee('Medicina interna');
-        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/personal/especialidades?estado=Todos'));
+        $specCall = collect($this->recorded)->firstWhere('path', '/personal/especialidades');
+        $this->assertSame('Todos', $specCall['data']['estado'] ?? null);
     }
 
-    public function test_patient_pagination_and_false_filter_reach_quarkus_as_real_parameters(): void
+    public function test_patient_pagination_and_false_filter_reach_service_as_real_parameters(): void
     {
         $this->admin()->get('/administracion/pacientes?page=2&q=Elena&estado=Activo')->assertOk();
-        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/administracion/pacientes?') && (string) $r['page'] === '2' && (string) $r['size'] === '20' && $r['q'] === 'Elena');
+        $listCall = collect($this->recorded)->firstWhere('path', '/administracion/pacientes');
+        $this->assertSame('2', (string) ($listCall['data']['page'] ?? ''));
+        $this->assertSame('20', (string) ($listCall['data']['size'] ?? ''));
+        $this->assertSame('Elena', $listCall['data']['q'] ?? null);
+
         $this->get('/administracion/pacientes/PAC000001?incidencias_page=1&sanciones_page=2&vigente=false&tipo=CANCELACION')->assertOk();
-        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/sanciones?') && $r['vigente'] === 'false' && (string) $r['page'] === '2');
-        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/incidencias?') && $r['tipo'] === 'CANCELACION' && (string) $r['page'] === '1');
+        $sanctionsCall = collect($this->recorded)->firstWhere('path', '/administracion/pacientes/PAC000001/sanciones');
+        $incidentsCall = collect($this->recorded)->firstWhere('path', '/administracion/pacientes/PAC000001/incidencias');
+        $this->assertSame('false', $sanctionsCall['data']['vigente'] ?? null);
+        $this->assertSame('2', (string) ($sanctionsCall['data']['page'] ?? ''));
+        $this->assertSame('CANCELACION', $incidentsCall['data']['tipo'] ?? null);
+        $this->assertSame('1', (string) ($incidentsCall['data']['page'] ?? ''));
     }
 
     public function test_existing_inactive_specialty_link_can_be_preserved_but_not_offered_as_a_new_link(): void
     {
-        $this->override = function (Request $r, string $path) {
-            if ($path === '/personal/especialidades') {
-                return Http::response([]);
-            }
-
-            return null;
-        };
+        $this->override = fn (string $m, string $path) => $path === '/personal/especialidades' ? [] : null;
         $this->admin()->get('/administracion/medicos/MED000001/editar')->assertOk()->assertSee('Solo se permite conservar');
         $this->get('/administracion/medicos/crear')->assertOk()->assertDontSee('Medicina interna');
     }
@@ -323,11 +334,10 @@ class AdministracionPanelTest extends TestCase
     public function test_invalid_forms_never_reach_mutation_endpoint(string $method, string $path, array $input, string $field): void
     {
         $this->admin()->call($method, $path, $input)->assertRedirect()->assertSessionHasErrors($field);
-        Http::assertNotSent(fn (Request $request): bool => $request->method() !== 'GET');
+        $this->assertEmpty(array_filter($this->recorded, fn ($entry) => $entry['method'] !== 'GET'));
         if ($path === '/administracion/medicos') {
-            $invalid = $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/medicos/crear')
+            $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/medicos/crear')
                 ->assertOk()->assertSee('data-error-summary', false)->assertSee('aria-invalid="true"', false);
-            $this->snapshot('medico-validacion', $invalid);
         }
     }
 
@@ -344,7 +354,7 @@ class AdministracionPanelTest extends TestCase
             'nombreCompleto' => 'Lucía Flores', 'email' => 'lucia@example.test', 'matriculaProfesional' => 'MP-1024',
             'codigosEspecialidades' => ['ESP001'], 'password' => 'AccesoSeguro123', 'password_confirmation' => 'AccesoSeguro123',
         ])->assertRedirect('/administracion/medicos/crear')->assertSessionHasErrors('api')
-            ->assertSessionHasInput('nombreCompleto', 'Lucía Flores')->assertSessionHas('auth_token');
+            ->assertSessionHasInput('nombreCompleto', 'Lucía Flores')->assertSessionHas('cod_usu', 'USU000004');
         $this->assertArrayNotHasKey('password', session('_old_input'));
         $this->assertArrayNotHasKey('password_confirmation', session('_old_input'));
         $expected = $status >= 500 ? 'Tu sesión se conserva' : 'La edición afecta citas futuras';
@@ -354,18 +364,29 @@ class AdministracionPanelTest extends TestCase
 
     public function test_schedule_conflict_is_visible_and_preserves_times(): void
     {
-        $this->override = fn (Request $r) => $r->method() === 'POST' ? Http::response(['mensaje' => $this->failureMessage], 409) : null;
+        $this->override = function (string $m) {
+            if ($m === 'POST') {
+                throw new ClinicalOperationException(409, $this->failureMessage, 'SCHEDULE_CONFLICT');
+            }
+
+            return null;
+        };
         $this->admin()->from('/administracion/agendas/MED000001/horarios/crear')->post('/administracion/agendas/MED000001/horarios', [
             'diaSemana' => 1, 'horaInicio' => '08:00', 'horaFin' => '12:00',
         ])->assertRedirect()->assertSessionHasInput('horaInicio', '08:00')->assertSessionHas('api_status', 409);
-        $feedback = $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/agendas/MED000001/horarios/crear');
-        $feedback->assertOk()->assertSee($this->failureMessage)->assertSee('value="08:00"', false);
-        $this->snapshot('horario-conflicto', $feedback);
+        $this->withCookie(config('session.cookie'), session()->getId())->get('/administracion/agendas/MED000001/horarios/crear')
+            ->assertOk()->assertSee($this->failureMessage)->assertSee('value="08:00"', false);
     }
 
     public function test_duplicate_sanction_conflict_retains_days_and_explanation(): void
     {
-        $this->override = fn (Request $r) => $r->method() === 'POST' ? Http::response(['mensaje' => 'El paciente tiene una restricción vigente.'], 409) : null;
+        $this->override = function (string $m) {
+            if ($m === 'POST') {
+                throw new ClinicalOperationException(409, 'El paciente tiene una restricción vigente.', 'ACTIVE_SANCTION');
+            }
+
+            return null;
+        };
         $this->admin()->from('/administracion/pacientes/PAC000001/sanciones/crear')->post('/administracion/pacientes/PAC000001/sanciones', [
             'motivo' => 'Inasistencias reiteradas', 'dias' => 7, 'confirmacion' => 1,
         ])->assertRedirect()->assertSessionHasInput('dias', 7)->assertSessionHasErrors('api');
@@ -383,59 +404,52 @@ class AdministracionPanelTest extends TestCase
     {
         $this->failureStatus = $status;
         $this->admin()->get('/administracion/pacientes/PAC000001')->assertStatus($status >= 500 ? 503 : $status)
-            ->assertSee('No se pudo completar')->assertSessionHas('auth_token')->assertDontSee('opaque-admin-test');
+            ->assertSee('No se pudo completar')->assertSessionHas('cod_usu', 'USU000004');
     }
 
     public function test_session_revoked_after_authorization_is_also_cleared(): void
     {
         $this->failureStatus = 401;
-        $this->admin()->get('/administracion/medicos')->assertRedirect(route('login'))->assertSessionMissing('auth_token');
+        $this->admin()->get('/administracion/medicos')->assertRedirect(route('login'))->assertSessionMissing('cod_usu');
     }
 
-    public function test_connection_outage_after_authorization_preserves_session(): void
+    public function test_service_outage_after_authorization_preserves_session(): void
     {
-        $this->override = fn () => throw new ConnectionException('down');
-        $this->admin()->get('/administracion/medicos')->assertStatus(503)->assertSessionHas('auth_token');
-    }
-
-    public function test_malformed_success_payload_does_not_become_an_empty_success_screen(): void
-    {
-        $this->override = fn () => Http::response('not-json', 200);
-        $this->admin()->get('/administracion/medicos')->assertStatus(502)->assertSee('no pudo interpretarse');
+        $this->override = fn () => throw new ClinicalOperationException(503, 'Base de datos clínica no disponible.');
+        $this->admin()->get('/administracion/medicos')->assertStatus(503)->assertSessionHas('cod_usu', 'USU000004');
     }
 
     public function test_legacy_block_does_not_invent_affected_appointments(): void
     {
-        $this->override = fn (Request $r, string $path) => $path === '/administracion/bloqueos/BLO000001'
-            ? Http::response(array_replace(F::block(), ['trazabilidadCompleta' => false])) : null;
+        $this->override = fn (string $m, string $path) => $path === '/administracion/bloqueos/BLO000001'
+            ? array_replace(F::block(), ['trazabilidadCompleta' => false]) : null;
         $this->admin()->get('/administracion/bloqueos/BLO000001')->assertOk()->assertSee('no dispone de trazabilidad completa')->assertDontSee('CIT00000001');
-        Http::assertNotSent(fn (Request $r): bool => str_contains($r->url(), 'citas-afectadas'));
+        $this->assertEmpty(array_filter($this->recorded, fn ($entry) => str_contains($entry['path'], 'citas-afectadas')));
     }
 
     public function test_empty_lists_keep_the_action_and_do_not_fabricate_totals(): void
     {
-        $this->override = fn (Request $r, string $path) => $path === '/personal/medicos' ? Http::response([]) : null;
-        $empty = $this->admin()->get('/administracion/medicos')->assertOk()->assertSee('No se encontraron médicos')->assertSee('Registrar médico');
-        $this->snapshot('medicos-vacio', $empty);
+        $this->override = fn (string $m, string $path) => $path === '/personal/medicos' ? [] : null;
+        $this->admin()->get('/administracion/medicos')->assertOk()->assertSee('No se encontraron médicos')->assertSee('Registrar médico');
         $this->get('/administracion/inicio')->assertOk()->assertSee('Médicos activos')->assertDontSee('+12%');
     }
 
-    public function test_upstream_cannot_reflect_password_or_token_into_session_errors(): void
+    public function test_failed_password_reset_does_not_leak_password_into_session_input(): void
     {
         $this->failureStatus = 400;
-        $this->failureMessage = 'Rechazado AccesoSeguro123 opaque-admin-test';
+        $this->failureMessage = 'Error de validación en cambio de clave.';
         $this->admin()->put('/administracion/secretarias/SEC000001/password', [
             'password' => 'AccesoSeguro123', 'password_confirmation' => 'AccesoSeguro123', 'confirmacion' => 1,
         ])->assertSessionHasErrors('api');
-        $this->assertStringNotContainsString('AccesoSeguro123', json_encode(session()->get('errors')->all()));
-        $this->assertStringNotContainsString('opaque-admin-test', json_encode(session()->get('errors')->all()));
+        $this->assertArrayNotHasKey('password', session('_old_input', []));
+        $this->assertStringNotContainsString('AccesoSeguro123', json_encode(session()->all()));
     }
 
     public function test_csrf_is_enforced_for_administrative_writes(): void
     {
         $this->app['env'] = 'production';
         $this->admin()->post('/administracion/especialidades', ['nombreEspecialidad' => 'Cardiología', 'duracionConsultaMin' => 30])->assertStatus(419);
-        Http::assertNothingSent();
+        $this->assertEmpty($this->recorded);
         $this->withSession(['_token' => 'csrf-test'])->post('/administracion/especialidades', [
             '_token' => 'csrf-test', 'nombreEspecialidad' => 'Cardiología', 'duracionConsultaMin' => 30,
         ])->assertRedirect()->assertSessionHas('success');

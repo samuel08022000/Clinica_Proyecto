@@ -9,6 +9,7 @@
     <x-admin.notice>El turno se confirma al guardar. Si otra persona lo ocupa antes, podrás elegir uno nuevo.</x-admin.notice>
     <x-admin.form :action="route('secretaria.reservas.store')" confirm="¿Confirmas registrar esta cita presencial para el paciente seleccionado?">
         <input type="hidden" name="codPac" value="{{ $patient['codPac'] }}"><input type="hidden" name="codSlot" value="{{ $selected['codSlot'] }}">
+        @if(filled($filters['codDer'] ?? null))<input type="hidden" name="codDer" value="{{ $filters['codDer'] }}">@endif
         @foreach(['codEsp', 'codMed', 'fecha'] as $key)@if(isset($filters[$key]))<input type="hidden" name="{{ $key }}" value="{{ $filters[$key] }}">@endif @endforeach
         <x-admin.confirmation message="He comprobado el paciente, la fecha y el horario." />
         <div class="a-actions"><x-admin.button>Confirmar reserva</x-admin.button><x-admin.button variant="secondary" :href="route('secretaria.reservas.create', array_diff_key($filters, ['codSlot' => true]))">Elegir otro turno</x-admin.button></div>

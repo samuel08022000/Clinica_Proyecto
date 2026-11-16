@@ -6,8 +6,10 @@
         <h2 id="admin-error-title">{{ session('api_status') === 409 ? 'La operación tiene un conflicto' : 'Revisa la solicitud' }}</h2>
         <ul>
             @foreach($errors->messages() as $field => $messages)
+                @php($baseField = explode('.', $field)[0])
+                @php($targetId = session('error_field_ids.'.$baseField) ?? str_replace(['[', ']'], '-', $baseField))
                 @foreach($messages as $message)
-                    <li>@if($field === 'api'){{ $message }}@else<a href="#{{ str_replace(['[', ']'], '-', explode('.', $field)[0]) }}" data-error-field="{{ explode('.', $field)[0] }}">{{ $message }}</a>@endif</li>
+                    <li>@if($field === 'api'){{ $message }}@else<a href="#{{ $targetId }}" data-error-field="{{ $targetId }}">{{ $message }}</a>@endif</li>
                 @endforeach
             @endforeach
         </ul>

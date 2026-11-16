@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PortalFrontendTest extends TestCase
@@ -14,14 +15,21 @@ class PortalFrontendTest extends TestCase
 
     public function test_portal_renders_without_inventing_specialties(): void
     {
+        Http::fake();
         $response = $this->get(route('home'));
 
         $response->assertStatus(200);
         $response->assertSee('Tus citas, en orden');
-        $response->assertSee('La API pública de especialidades todavía no está conectada al portal.');
+        $this->assertTrue(
+            str_contains($response->getContent(), 'data-specialties-state="ready"')
+            || str_contains($response->getContent(), 'No hay especialidades activas disponibles en este momento.')
+            || str_contains($response->getContent(), 'No fue posible consultar las especialidades. Intenta nuevamente.'),
+        );
+        $response->assertDontSee('La API pública de especialidades todavía no está conectada al portal.');
         $response->assertSeeInOrder(['Reservas web', 'En desarrollo', 'Acreditación con QR', 'Disponible', 'Recordatorio 24 h antes', 'Próximamente', 'Consulta de citas', 'En desarrollo']);
         $response->assertSee('Aún no se envían recordatorios automáticos.');
         $response->assertDontSee('Medicina General');
+        Http::assertNothingSent();
     }
 
     public function test_classic_portal_keeps_its_public_sections_and_working_navigation(): void

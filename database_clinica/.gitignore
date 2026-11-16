@@ -1,0 +1,5 @@
+# Dumps y respaldos locales privados no deben versionarse
+*.dump
+*.sql.gz
+*.tar.gz
+*.bak

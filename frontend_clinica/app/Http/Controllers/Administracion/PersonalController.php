@@ -13,7 +13,7 @@ abstract class PersonalController extends AdminController
     public function index(Request $request)
     {
         $filters = $request->validate(['estado' => ['nullable', 'in:Activo,Inactivo'], 'q' => ['nullable', 'string', 'max:150']]);
-        $rows = $this->api->administrative('GET', 'personal/'.$this->resource, ['estado' => $filters['estado'] ?? null]);
+        $rows = $this->backend->request('GET', 'personal/'.$this->resource, ['estado' => $filters['estado'] ?? null]);
         // Staff APIs expose state only. Search is explicitly scoped to the returned catalog.
         $term = mb_strtolower($filters['q'] ?? '');
         if ($term !== '') {
@@ -38,14 +38,14 @@ abstract class PersonalController extends AdminController
     public function show(string $codigo)
     {
         return view('administracion.personal.show', [
-            'record' => $this->api->administrative('GET', 'personal/'.$this->resource.'/'.$codigo),
+            'record' => $this->backend->request('GET', 'personal/'.$this->resource.'/'.$codigo),
             'resource' => $this->resource,
         ]);
     }
 
     public function edit(string $codigo)
     {
-        return $this->form($this->api->administrative('GET', 'personal/'.$this->resource.'/'.$codigo));
+        return $this->form($this->backend->request('GET', 'personal/'.$this->resource.'/'.$codigo));
     }
 
     public function update(PersonalRequest $request, string $codigo)
@@ -76,7 +76,7 @@ abstract class PersonalController extends AdminController
     private function form(array $record)
     {
         $specialties = $this->resource === 'medicos'
-            ? $this->api->administrative('GET', 'personal/especialidades') : [];
+            ? $this->backend->request('GET', 'personal/especialidades') : [];
         $selected = [];
         // The backend permits keeping existing active links to an inactive specialty.
         foreach ($record['especialidades'] ?? [] as $specialty) {

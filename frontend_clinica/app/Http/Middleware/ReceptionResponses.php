@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Exceptions\QuarkusApiException;
+use App\Exceptions\ClinicalOperationException;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,7 +19,7 @@ class ReceptionResponses
         return self::privateResponse($response);
     }
 
-    public static function renderFailure(Request $request, QuarkusApiException $exception): Response
+    public static function renderFailure(Request $request, ClinicalOperationException $exception): Response
     {
         if ($exception->status === 401) {
             $request->session()->invalidate();

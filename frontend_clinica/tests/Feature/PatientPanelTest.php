@@ -2,109 +2,379 @@
 
 namespace Tests\Feature;
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
+use App\Contracts\PatientAppointmentManager;
+use App\Contracts\PatientAvailabilityProvider;
+use App\Contracts\PatientProfileProvider;
+use App\Exceptions\AuthDomainException;
+use App\Models\Usuario;
+use App\Services\Auth\AccountStatusService;
+use Illuminate\Database\QueryException;
+use Mockery;
+use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PatientPanelTest extends TestCase
 {
+    private string $accountRole = 'ROL001';
+
+    private ?int $accountStatus = null;
+
+    private bool $databaseOffline = false;
+
+    private MockInterface $appointments;
+
+    private MockInterface $availability;
+
+    private MockInterface $profiles;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->withoutVite();
-        Http::preventStrayRequests();
+
+        $status = Mockery::mock(AccountStatusService::class);
+        $status->shouldReceive('requireActive')->andReturnUsing(function (string $userId): object {
+            if ($this->databaseOffline) {
+                throw new QueryException('clinical', 'SELECT 1', [], new \PDOException('SQLSTATE[08006] connection refused'));
+            }
+            if ($this->accountStatus === 401) {
+                throw new AuthDomainException('ACCOUNT_NOT_FOUND', 401, 'La cuenta ya no está disponible.');
+            }
+            if ($this->accountStatus === 403) {
+                throw new AuthDomainException('ACCOUNT_DISABLED', 403, 'La cuenta no está habilitada.');
+            }
+
+            return (object) [
+                'cod_usu' => $userId,
+                'nombre_completo' => 'Rosa Mendoza',
+                'email' => 'rosa@example.test',
+                'cod_rol' => $this->accountRole,
+                'nombre_rol' => match ($this->accountRole) {
+                    'ROL001' => 'Paciente',
+                    'ROL002' => 'Secretaria',
+                    'ROL003' => 'Médico',
+                    'ROL004' => 'Administrador',
+                    default => 'Desconocido',
+                },
+                'usuario_estado' => 'Activo',
+                'rol_estado' => 'Activo',
+                'perfil_presente' => true,
+                'perfil_estado' => 'Activo',
+                'email_verificado' => true,
+                'bloqueado_hasta' => null,
+            ];
+        });
+        $this->app->instance(AccountStatusService::class, $status);
+
+        $this->profiles = $this->mock(PatientProfileProvider::class);
+        $this->profiles->shouldReceive('profile')->byDefault()->andReturn($this->profileData());
+
+        $this->availability = $this->mock(PatientAvailabilityProvider::class);
+        $this->availability->shouldReceive('specialties')->byDefault()->andReturn([
+            ['codEsp' => 'ESP001', 'nombreEspecialidad' => 'Cardiología', 'duracionConsultaMin' => 30],
+        ]);
+        $this->availability->shouldReceive('doctors')->byDefault()->andReturn([
+            ['codMed' => 'MED001', 'nombreCompleto' => 'Dra. Ana Flores', 'duracionConsultaMin' => 30],
+        ]);
+        $this->availability->shouldReceive('slots')->byDefault()->andReturn([
+            'fecha' => '2026-11-17',
+            'codEsp' => 'ESP001',
+            'codMed' => null,
+            'habilitadoParaReservar' => true,
+            'slots' => [[
+                'codSlot' => 'SLOT0001',
+                'codMed' => 'MED001',
+                'nombreMedico' => 'Dra. Ana Flores',
+                'codEsp' => 'ESP001',
+                'nombreEspecialidad' => 'Cardiología',
+                'fecha' => '2026-11-17',
+                'horaInicio' => '09:00:00',
+                'horaFin' => '09:30:00',
+                'estadoDisponibilidad' => 'Disponible',
+            ]],
+        ]);
+
+        $this->appointments = $this->mock(PatientAppointmentManager::class);
+        $this->appointments->shouldReceive('list')->byDefault()->andReturnUsing(function (array $filters): array {
+            $scope = $filters['alcance'] ?? 'todas';
+            $state = $filters['estado'] ?? null;
+            $appointments = match (true) {
+                $state === 'Atendida' => [$this->appointment('CIT0002', 'Atendida', true)],
+                $state === 'Cancelada' => [$this->appointment('CIT0003', 'Cancelada', true)],
+                $scope === 'proximas' => [$this->appointment()],
+                $scope === 'pasadas' => [
+                    $this->appointment('CIT0002', 'Atendida', true),
+                    $this->appointment('CIT0003', 'Cancelada', true),
+                ],
+                default => [$this->appointment()],
+            };
+
+            return [
+                'citas' => $appointments,
+                'alcance' => $scope,
+                'page' => 0,
+                'size' => $filters['size'] ?? 20,
+                'hayMas' => false,
+            ];
+        });
+        $this->appointments->shouldReceive('detail')->byDefault()->andReturnUsing(
+            fn (string $code): array => $this->appointment($code) + [
+                'puedeCancelar' => true,
+                'puedeReprogramar' => true,
+                'puedeVerPaseQr' => true,
+            ],
+        );
     }
 
-    public function test_guest_is_redirected_to_login_without_contacting_quarkus(): void
+    public function test_guest_is_redirected_to_login_without_contacting_clinical_db(): void
     {
-        Http::fake();
+        $this->databaseOffline = true;
 
         $this->get(route('paciente.home'))->assertRedirect(route('login'));
-
-        Http::assertNothingSent();
     }
 
-    public function test_patient_keeps_classic_layout_identity_navigation_and_future_state(): void
+    public function test_patient_sees_original_navigation_and_laravel_backed_dashboard(): void
     {
-        Http::fake(['*/auth/authorize*' => Http::response($this->identity(), 200)]);
-
-        $this->withSession($this->sessionData())
-            ->get('/paciente/inicio')
+        $this->patient()->get(route('paciente.home'))
             ->assertOk()
-            ->assertViewIs('dashboard.home')
-            ->assertSee('Inicio de Paciente')
-            ->assertSee('Cuenta conectada')
-            ->assertSee('Paciente de QA')
-            ->assertSee('paciente@example.test')
-            ->assertSee('ROL001')
-            ->assertSee('Cuenta activo')
-            ->assertSee('Los módulos operativos de este perfil se implementarán en las siguientes fases.')
-            ->assertSee('href="'.route('home').'"', false)
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertViewIs('paciente.home')
+            ->assertSee('Hola, Rosa')
+            ->assertSee('Tu próxima cita')
+            ->assertSee('Agendar cita')
+            ->assertSee('Mis citas')
+            ->assertSee('Mi perfil')
             ->assertSee('action="'.route('logout').'"', false)
-            ->assertSee('name="_token"', false)
-            ->assertDontSee('Cita confirmada')
-            ->assertDontSee('Pago realizado')
-            ->assertDontSee('Recordatorio enviado')
-            ->assertDontSee('auth_token');
+            ->assertDontSee('administracion/')
+            ->assertDontSee('secretaria/');
+    }
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/auth/authorize?roles=ROL001')
-            && $request->hasHeader('Authorization'));
+    public function test_patient_can_search_availability_and_reserve_without_client_patient_identifier(): void
+    {
+        $date = now('America/La_Paz')->addDay()->format('Y-m-d');
+        $this->appointments->shouldReceive('reserve')->once()->with('SLOT0001')
+            ->andReturn($this->appointment('CIT0004'));
+
+        $this->patient()->get(route('paciente.citas.nueva', [
+            'codEsp' => 'ESP001',
+            'codMed' => 'MED001',
+            'fecha' => $date,
+        ]))
+            ->assertOk()
+            ->assertViewIs('paciente.nueva-cita')
+            ->assertSee('Cardiología')
+            ->assertSee('Dra. Ana Flores')
+            ->assertSee('SLOT0001', false);
+
+        $this->patient()->post(route('paciente.citas.store'), [
+            'codSlot' => 'SLOT0001',
+            'codPac' => 'PACIENTE-AJENO',
+        ])->assertRedirect(route('paciente.citas.show', 'CIT0004'));
+    }
+
+    public function test_patient_can_list_and_open_own_appointment_detail(): void
+    {
+        $this->patient()->get(route('paciente.citas'))
+            ->assertOk()
+            ->assertViewIs('paciente.citas')
+            ->assertSee('Mis citas')
+            ->assertSee('Cardiología')
+            ->assertSee(route('paciente.citas.show', 'CIT0001'), false);
+
+        $this->patient()->get(route('paciente.citas.show', 'CIT0001'))
+            ->assertOk()
+            ->assertViewIs('paciente.detalle')
+            ->assertSee('Detalle de cita')
+            ->assertSee('CIT0001');
+    }
+
+    public function test_cancel_requires_reason_and_confirmation(): void
+    {
+        $this->appointments->shouldReceive('cancel')->never();
+
+        $this->patient()->from(route('paciente.citas.show', 'CIT0001'))
+            ->post(route('paciente.citas.cancel', 'CIT0001'), [])
+            ->assertRedirect(route('paciente.citas.show', 'CIT0001'))
+            ->assertInvalid([
+                'motivo' => 'El campo motivo es obligatorio.',
+                'confirmacion' => 'Debes confirmar la operación.',
+            ]);
+    }
+
+    public function test_patient_can_cancel_an_owned_mutable_appointment(): void
+    {
+        $this->appointments->shouldReceive('cancel')->once()
+            ->with('CIT0001', 'Viaje impostergable')
+            ->andReturn($this->appointment('CIT0001', 'Cancelada', true));
+
+        $this->patient()->post(route('paciente.citas.cancel', 'CIT0001'), [
+            'motivo' => 'Viaje impostergable',
+            'confirmacion' => '1',
+            'codPac' => 'PACIENTE-AJENO',
+        ])->assertRedirect(route('paciente.citas', ['tab' => 'canceladas']));
+    }
+
+    public function test_patient_can_search_and_confirm_a_reschedule(): void
+    {
+        $date = now('America/La_Paz')->addDay()->format('Y-m-d');
+        $this->appointments->shouldReceive('reschedule')->once()
+            ->with('CIT0001', 'SLOT0001', 'Cambio de horario laboral')
+            ->andReturn($this->appointment('CIT0005'));
+
+        $this->patient()->get(route('paciente.citas.reprogramar', [
+            'cita' => 'CIT0001',
+            'codMed' => 'MED001',
+            'fecha' => $date,
+        ]))
+            ->assertOk()
+            ->assertViewIs('paciente.reprogramar')
+            ->assertSee('Reprogramar cita')
+            ->assertSee('SLOT0001', false);
+
+        $this->patient()->post(route('paciente.citas.reschedule', 'CIT0001'), [
+            'codSlotNuevo' => 'SLOT0001',
+            'motivo' => 'Cambio de horario laboral',
+            'confirmacion' => 'yes',
+            'codPac' => 'PACIENTE-AJENO',
+        ])->assertRedirect(route('paciente.citas.show', 'CIT0005'));
+    }
+
+    public function test_patient_can_consult_profile_without_editable_patient_identifier(): void
+    {
+        $this->patient()->get(route('paciente.perfil'))
+            ->assertOk()
+            ->assertViewIs('paciente.perfil')
+            ->assertSee('Rosa Mendoza')
+            ->assertSee('rosa@example.test')
+            ->assertDontSee('name="codPac"', false)
+            ->assertDontSee('paciente.perfil.update');
     }
 
     public static function otherRoles(): array
     {
-        return [['ROL002'], ['ROL003'], ['ROL004']];
+        return [
+            'secretaria' => ['ROL002'],
+            'medico' => ['ROL003'],
+            'administrador' => ['ROL004'],
+        ];
     }
 
     #[DataProvider('otherRoles')]
     public function test_other_roles_cannot_open_the_patient_panel(string $role): void
     {
-        Http::fake(['*/auth/authorize*' => Http::response(['error' => ['code' => 'FORBIDDEN']], 403)]);
+        $this->accountRole = $role;
 
-        $this->withSession($this->sessionData($role))->get('/paciente/inicio')->assertForbidden();
+        $this->patient($role)->get(route('paciente.home'))->assertForbidden();
     }
 
-    public function test_local_patient_role_cannot_override_a_different_remotely_validated_role(): void
+    public function test_session_patient_role_cannot_override_a_different_validated_account_role(): void
     {
-        $identity = $this->identity();
-        $identity['data']['user']['role'] = ['code' => 'ROL004', 'name' => 'Administrador', 'slug' => 'administracion'];
-        Http::fake(['*/auth/authorize*' => Http::response($identity, 200)]);
+        $this->accountRole = 'ROL002';
 
-        $this->withSession($this->sessionData())->get('/paciente/inicio')->assertForbidden();
+        $this->patient('ROL001')->get(route('paciente.home'))->assertForbidden();
     }
 
     public function test_revoked_patient_session_is_removed(): void
     {
-        Http::fake(['*/auth/authorize*' => Http::response(['error' => ['code' => 'INVALID_SESSION']], 401)]);
+        $this->accountStatus = 401;
 
-        $this->withSession($this->sessionData())->get('/paciente/inicio')
-            ->assertRedirect(route('login'))->assertSessionMissing('auth_token');
+        $this->patient()->get(route('paciente.home'))
+            ->assertRedirect(route('login'))
+            ->assertSessionMissing('cod_usu')
+            ->assertSessionMissing('cod_rol');
     }
 
-    public function test_unavailable_authorizer_does_not_expose_a_successful_patient_panel(): void
+    public function test_unavailable_authorizer_returns_private_503_error_page(): void
     {
-        Http::fake(fn () => throw new ConnectionException('Servicio no disponible'));
+        $this->databaseOffline = true;
 
-        $this->withSession($this->sessionData())->get('/paciente/inicio')
-            ->assertStatus(503)->assertSessionHas('cod_rol', 'ROL001')->assertDontSee('Cuenta conectada');
+        $this->patient()->get(route('paciente.home'))
+            ->assertServiceUnavailable()
+            ->assertHeader('Retry-After', '30')
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertSee('No fue posible validar la sesión')
+            ->assertDontSee('Tu próxima cita');
     }
 
-    private function sessionData(string $role = 'ROL001'): array
+    private function patient(string $role = 'ROL001'): static
     {
-        return ['auth_token' => 'patient-unit-session', 'cod_usu' => 'USU000001', 'cod_rol' => $role];
+        $user = new Usuario;
+        $user->forceFill([
+            'cod_usu' => 'USU000001',
+            'cod_rol' => $role,
+            'nombre_completo' => 'Rosa Mendoza',
+            'email' => 'rosa@example.test',
+            'estado' => 'Activo',
+        ]);
+
+        return $this->actingAs($user, 'web')->withSession([
+            'auth_authority' => 'laravel',
+            'auth_expires_at' => now()->addMinutes(120)->toIso8601String(),
+            'cod_usu' => 'USU000001',
+            'cod_rol' => $role,
+            'nombre_usuario' => 'Rosa Mendoza',
+            'email_usuario' => 'rosa@example.test',
+            'nombre_rol' => 'Paciente',
+            'rol_slug' => 'paciente',
+            'estado_cuenta' => 'Activo',
+        ]);
     }
 
-    private function identity(): array
+    /** @return array<string, mixed> */
+    private function profileData(): array
     {
-        return ['data' => [
-            'user' => [
-                'id' => 'USU000001', 'name' => 'Paciente de QA', 'email' => 'paciente@example.test',
-                'role' => ['code' => 'ROL001', 'name' => 'Paciente', 'slug' => 'paciente'], 'accountStatus' => 'Activo',
+        return [
+            'codPac' => 'PAC000001',
+            'codUsu' => 'USU000001',
+            'nombreCompleto' => 'Rosa Mendoza',
+            'email' => 'rosa@example.test',
+            'ci' => '1234567',
+            'fechaNacimiento' => '1990-05-10',
+            'telefono' => '+591 70000000',
+            'ciudadResidencia' => 'La Paz',
+            'estadoCuenta' => 'Activo',
+            'bloqueadoHasta' => null,
+            'emailVerificado' => true,
+            'estadoReserva' => 'Activo',
+            'habilitadoParaReservar' => true,
+            'sancionVigente' => null,
+            'resumen' => [
+                'citasProximas' => 1,
+                'derivacionesPendientes' => 0,
+                'incidenciasRegistradas' => 0,
             ],
-            'expiresAt' => '2099-01-01T00:00:00Z',
-        ]];
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function appointment(
+        string $code = 'CIT0001',
+        string $state = 'Confirmada',
+        bool $expired = false,
+    ): array {
+        return [
+            'codCit' => $code,
+            'codSlot' => 'SLOT0001',
+            'codPac' => 'PAC000001',
+            'codMed' => 'MED001',
+            'nombreMedico' => 'Dra. Ana Flores',
+            'codEsp' => 'ESP001',
+            'nombreEspecialidad' => 'Cardiología',
+            'fecha' => $expired ? '2026-01-10' : '2026-11-20',
+            'horaInicio' => '09:00:00',
+            'horaFin' => '09:30:00',
+            'estado' => $state,
+            'canalReserva' => 'Web',
+            'motivoCancelacion' => null,
+            'motivoReprogramacion' => null,
+            'canceladoEn' => null,
+            'horaLlegadaCheckin' => null,
+            'fechaAtencion' => null,
+            'codCitPadre' => null,
+            'creadoEn' => '2026-11-16 09:00:00',
+            'qrDisponible' => $state === 'Confirmada',
+            'esVencida' => $expired,
+        ];
     }
 }

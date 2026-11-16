@@ -9,12 +9,23 @@ use App\Http\Controllers\Administracion\PacienteController;
 use App\Http\Controllers\Administracion\SancionController;
 use App\Http\Controllers\Administracion\SecretariaController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Medico\AgendaController as MedicoAgendaController;
+use App\Http\Controllers\Medico\AnalisisController as MedicoAnalisisController;
+use App\Http\Controllers\Medico\CitaController as MedicoCitaController;
+use App\Http\Controllers\Medico\DashboardController as MedicoDashboardController;
+use App\Http\Controllers\Medico\DerivacionController as MedicoDerivacionController;
+use App\Http\Controllers\Paciente\AppointmentController as PatientAppointmentController;
+use App\Http\Controllers\Paciente\DashboardController as PatientDashboardController;
+use App\Http\Controllers\Paciente\ProfileController as PatientProfileController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\Secretaria\CheckinController;
 use App\Http\Controllers\Secretaria\CitaController;
+use App\Http\Controllers\Secretaria\DerivacionController as SecretariaDerivacionController;
 use App\Http\Controllers\Secretaria\HistorialController;
 use App\Http\Controllers\Secretaria\ReservaController;
 use App\Http\Middleware\AdministrativeResponses;
+use App\Http\Middleware\MedicoResponses;
+use App\Http\Middleware\PatientResponses;
 use App\Http\Middleware\ReceptionResponses;
 use Illuminate\Support\Facades\Route;
 
@@ -58,10 +69,40 @@ Route::controller(AuthController::class)->group(function (): void {
 
 });
 
-Route::controller(AuthController::class)->group(function (): void {
-    Route::get('/paciente/inicio', 'dashboard')->middleware('rol:ROL001')->name('paciente.home');
-    Route::get('/medico/inicio', 'dashboard')->middleware('rol:ROL003')->name('medico.home');
-});
+Route::prefix('paciente')->name('paciente.')
+    ->middleware([PatientResponses::class, 'rol:ROL001'])
+    ->group(function (): void {
+        Route::get('/inicio', PatientDashboardController::class)->name('home');
+        Route::get('/citas', [PatientAppointmentController::class, 'index'])->name('citas');
+        Route::get('/citas/nueva', [PatientAppointmentController::class, 'create'])->name('citas.nueva');
+        Route::post('/citas', [PatientAppointmentController::class, 'store'])->name('citas.store');
+        Route::get('/citas/{cita}', [PatientAppointmentController::class, 'show'])
+            ->whereAlphaNumeric('cita')->name('citas.show');
+        Route::post('/citas/{cita}/cancelar', [PatientAppointmentController::class, 'cancel'])
+            ->whereAlphaNumeric('cita')->name('citas.cancel');
+        Route::get('/citas/{cita}/reprogramar', [PatientAppointmentController::class, 'editReschedule'])
+            ->whereAlphaNumeric('cita')->name('citas.reprogramar');
+        Route::post('/citas/{cita}/reprogramar', [PatientAppointmentController::class, 'reschedule'])
+            ->whereAlphaNumeric('cita')->name('citas.reschedule');
+        Route::get('/perfil', [PatientProfileController::class, 'show'])->name('perfil');
+    });
+
+Route::prefix('medico')->name('medico.')
+    ->middleware([MedicoResponses::class, 'rol:ROL003'])
+    ->group(function (): void {
+        Route::get('/inicio', MedicoDashboardController::class)->name('home');
+        Route::get('/agenda', [MedicoAgendaController::class, 'index'])->name('agenda.index');
+        Route::get('/historial', [MedicoAgendaController::class, 'history'])->name('historial.index');
+        Route::get('/citas/{cita}', [MedicoCitaController::class, 'show'])->whereAlphaNumeric('cita')->name('citas.show');
+        Route::post('/citas/{cita}/atender', [MedicoCitaController::class, 'finish'])->whereAlphaNumeric('cita')->name('citas.atender');
+        Route::get('/derivaciones', [MedicoDerivacionController::class, 'index'])->name('derivaciones.index');
+        Route::get('/derivaciones/{derivacion}', [MedicoDerivacionController::class, 'show'])->whereAlphaNumeric('derivacion')->name('derivaciones.show');
+        Route::get('/citas/{cita}/derivaciones/crear', [MedicoDerivacionController::class, 'create'])->whereAlphaNumeric('cita')->name('derivaciones.create');
+        Route::post('/citas/{cita}/derivaciones', [MedicoDerivacionController::class, 'store'])->whereAlphaNumeric('cita')->name('derivaciones.store');
+        Route::get('/citas/{cita}/analisis', [MedicoAnalisisController::class, 'index'])->whereAlphaNumeric('cita')->name('analisis.index');
+        Route::post('/citas/{cita}/analisis', [MedicoAnalisisController::class, 'store'])->whereAlphaNumeric('cita')->name('analisis.store');
+        Route::patch('/analisis/{analisis}', [MedicoAnalisisController::class, 'update'])->whereAlphaNumeric('analisis')->name('analisis.update');
+    });
 
 Route::prefix('secretaria')->name('secretaria.')
     ->middleware([ReceptionResponses::class, 'rol:ROL002'])
@@ -83,6 +124,9 @@ Route::prefix('secretaria')->name('secretaria.')
         Route::post('/citas/{cita}/cancelar', [CitaController::class, 'cancelStore'])->whereAlphaNumeric('cita')->name('citas.cancelar.store');
         Route::get('/citas/{cita}/inasistencia', [CitaController::class, 'absence'])->whereAlphaNumeric('cita')->name('citas.inasistencia');
         Route::post('/citas/{cita}/inasistencia', [CitaController::class, 'absenceStore'])->whereAlphaNumeric('cita')->name('citas.inasistencia.store');
+        Route::post('/citas/{cita}/reprogramar', [CitaController::class, 'rescheduleStore'])->whereAlphaNumeric('cita')->name('citas.reprogramar.store');
+        Route::get('/derivaciones', [SecretariaDerivacionController::class, 'index'])->name('derivaciones.index');
+        Route::get('/derivaciones/{derivacion}', [SecretariaDerivacionController::class, 'show'])->whereAlphaNumeric('derivacion')->name('derivaciones.show');
     });
 
 Route::prefix('administracion')->name('administracion.')

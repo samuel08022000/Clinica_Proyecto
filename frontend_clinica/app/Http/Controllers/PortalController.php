@@ -2,59 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\QuarkusApiClient;
 use Illuminate\Contracts\View\View;
-use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\QueryException;
 
-class PortalController extends Controller
+final class PortalController extends Controller
 {
-    public function __construct(private readonly QuarkusApiClient $apiClient) {}
+    public function __construct(private readonly DatabaseManager $database) {}
 
     public function index(): View
     {
         $specialties = [];
-        $specialtiesState = 'not-configured';
-        $specialtiesMessage = 'La API pública de especialidades todavía no está conectada al portal. En desarrollo.';
-        $endpoint = config('clinic.endpoints.specialties');
+        $specialtiesState = 'ready';
+        $specialtiesMessage = null;
 
-        if (filled($endpoint)) {
-            try {
-                $response = $this->apiClient->get($endpoint);
-
-                if ($response->successful()) {
-                    $payload = $response->json();
-                    $items = is_array($payload) && array_is_list($payload)
-                        ? $payload
-                        : data_get($payload, 'data', []);
-
-                    if (is_array($items)) {
-                        $specialties = collect($items)
-                            ->filter(fn (mixed $item): bool => is_array($item))
-                            ->map(fn (array $item): array => [
-                                'code' => $item['codEsp'] ?? null,
-                                'name' => $item['nombreEspecialidad'] ?? null,
-                                'description' => $item['descripcion'] ?? null,
-                                'duration' => $item['duracionConsultaMin'] ?? null,
-                            ])
-                            ->filter(fn (array $item): bool => filled($item['name']))
-                            ->values()
-                            ->all();
-                        $specialtiesState = $specialties === [] ? 'empty' : 'ready';
-                        $specialtiesMessage = $specialties === []
-                            ? 'No hay especialidades activas disponibles en este momento.'
-                            : null;
-                    } else {
-                        $specialtiesState = 'error';
-                        $specialtiesMessage = 'La API respondió con un formato que el portal no reconoce.';
-                    }
-                } else {
-                    $specialtiesState = 'error';
-                    $specialtiesMessage = 'No fue posible consultar las especialidades. Intenta nuevamente.';
-                }
-            } catch (ConnectionException) {
-                $specialtiesState = 'error';
-                $specialtiesMessage = 'El servicio de especialidades no está disponible en este momento.';
+        try {
+            $specialties = collect($this->database->connection('clinical')->select(<<<'SQL'
+                SELECT cod_esp AS code,nombre_especialidad AS name,descripcion AS description,
+                       duracion_consulta_min AS duration
+                FROM especialidades
+                WHERE estado='Activo'
+                ORDER BY nombre_especialidad,cod_esp
+                SQL))
+                ->map(fn (object $item): array => (array) $item)
+                ->all();
+            if ($specialties === []) {
+                $specialtiesState = 'empty';
+                $specialtiesMessage = 'No hay especialidades activas disponibles en este momento.';
             }
+        } catch (QueryException) {
+            $specialtiesState = 'error';
+            $specialtiesMessage = 'No fue posible consultar las especialidades. Intenta nuevamente.';
         }
 
         return view('welcome', [

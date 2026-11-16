@@ -10,7 +10,7 @@ class SecretariaController extends PersonalController
 
     public function password(string $codigo)
     {
-        return view('administracion.personal.password', ['record' => $this->api->administrative('GET', 'personal/secretarias/'.$codigo)]);
+        return view('administracion.personal.password', ['record' => $this->backend->request('GET', 'personal/secretarias/'.$codigo)]);
     }
 
     public function resetPassword(PasswordRequest $request, string $codigo)

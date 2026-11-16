@@ -32,6 +32,24 @@ return [
 
     'connections' => [
 
+        // Acceso clínico explícito. No cambia sesiones, caché, colas ni SQLite de tests.
+        'clinical' => [
+            'driver' => 'pgsql',
+            'host' => env('CLINICAL_DB_HOST', '127.0.0.1'),
+            'port' => env('CLINICAL_DB_PORT', '35443'),
+            'database' => env('CLINICAL_DB_DATABASE', 'clinica_laravel'),
+            'username' => env('CLINICAL_DB_USERNAME', 'clinica_app'),
+            'password' => env('CLINICAL_DB_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'timezone' => 'America/La_Paz',
+            'sslmode' => env('CLINICAL_DB_SSLMODE', 'prefer'),
+            'application_name' => 'clinica_laravel',
+            'options' => [PDO::ATTR_EMULATE_PREPARES => false],
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),

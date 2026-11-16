@@ -121,7 +121,7 @@
 
                     <fieldset class="form-step" data-step-panel hidden>
                         <legend>Verificación por correo</legend>
-                        <p class="form-step__intro">Al confirmar, Quarkus creará el usuario y el perfil paciente en una sola transacción y emitirá un código de seis dígitos.</p>
+                        <p class="form-step__intro">Al confirmar, el sistema creará el usuario y el perfil paciente en una sola transacción y emitirá un código de seis dígitos.</p>
 
                         <div class="otp-status" role="status">
                             <div><span>Vigencia</span><strong>5 minutos desde el envío</strong></div>

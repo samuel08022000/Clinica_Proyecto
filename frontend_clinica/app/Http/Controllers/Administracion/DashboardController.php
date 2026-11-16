@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Administracion;
 
-use App\Exceptions\QuarkusApiException;
+use App\Exceptions\ClinicalOperationException;
 use Illuminate\Contracts\View\View;
 
 class DashboardController extends AdminController
@@ -13,8 +13,8 @@ class DashboardController extends AdminController
         foreach (['medicos', 'secretarias', 'especialidades'] as $catalog) {
             try {
                 // These contracts are unpaginated catalogs, not an expensive walk through pages.
-                $counts[$catalog] = count($this->api->administrative('GET', 'personal/'.$catalog, ['estado' => 'Activo']));
-            } catch (QuarkusApiException $exception) {
+                $counts[$catalog] = count($this->backend->request('GET', 'personal/'.$catalog, ['estado' => 'Activo']));
+            } catch (ClinicalOperationException $exception) {
                 if ($exception->status < 500) {
                     throw $exception;
                 }

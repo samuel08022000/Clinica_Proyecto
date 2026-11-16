@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Secretaria;
 
 use App\Http\Requests\Secretaria\AppointmentActionRequest;
 use App\Http\Requests\Secretaria\AppointmentFiltersRequest;
+use App\Http\Requests\Secretaria\RescheduleRequest;
 use App\Support\AppointmentPresentation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -45,6 +46,15 @@ class CitaController extends ReceptionController
         $result = $this->write('citas/'.$cita.'/inasistencia', [], 'No Asistió');
 
         return redirect()->route('secretaria.citas.show', $cita)->with('success', 'La inasistencia fue registrada.')->with('appointment_result', $result);
+    }
+
+    public function rescheduleStore(RescheduleRequest $request, string $cita): RedirectResponse
+    {
+        $result = $this->write('citas/'.$cita.'/reprogramar', $request->safe()->only(['codSlot', 'motivo']), 'Confirmada');
+
+        return redirect()->route('secretaria.citas.show', $result['codCit'])
+            ->with('success', 'La cita fue reprogramada conservando su trazabilidad.')
+            ->with('appointment_result', $result);
     }
 
     private function details(string $cita): array

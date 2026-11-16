@@ -34,6 +34,6 @@ abstract class ReceptionRequest extends FormRequest
 
     public function messages(): array
     {
-        return ['required' => 'El campo :attribute es obligatorio.', 'accepted' => 'Debes confirmar la operación.', 'max.string' => 'El campo :attribute admite hasta :max caracteres.', 'regex' => 'El campo :attribute no tiene un formato válido.', 'date_format' => 'Usa una fecha válida con formato AAAA-MM-DD.', 'integer' => 'El campo :attribute debe ser entero.', 'between.numeric' => 'El campo :attribute debe estar entre :min y :max.', 'in' => 'Selecciona un valor permitido para :attribute.', 'after_or_equal' => 'La fecha final debe ser igual o posterior a la inicial.', 'prohibited' => 'Utiliza una fecha o un rango; no combines ambos.'];
+        return ['required' => 'El campo :attribute es obligatorio.', 'required_without' => 'El campo :attribute es obligatorio cuando no existe una derivación.', 'accepted' => 'Debes confirmar la operación.', 'max.string' => 'El campo :attribute admite hasta :max caracteres.', 'regex' => 'El campo :attribute no tiene un formato válido.', 'date_format' => 'Usa una fecha válida con formato AAAA-MM-DD.', 'integer' => 'El campo :attribute debe ser entero.', 'between.numeric' => 'El campo :attribute debe estar entre :min y :max.', 'in' => 'Selecciona un valor permitido para :attribute.', 'after_or_equal' => 'La fecha final debe ser igual o posterior a la inicial.', 'prohibited' => 'Utiliza una fecha o un rango; no combines ambos.'];
     }
 }

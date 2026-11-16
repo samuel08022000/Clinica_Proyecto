@@ -4,7 +4,7 @@ namespace App\Support;
 
 use Carbon\CarbonImmutable;
 
-/** Display affordances only. Every transition is still authorized by Quarkus/PostgreSQL. */
+/** Display affordances only. Every transition is still authorized by Laravel services and PostgreSQL. */
 final class AppointmentPresentation
 {
     public const STATES = ['Confirmada', 'En Espera', 'Atendida', 'Cancelada', 'No Asistió', 'Afectada/Pendiente Reprogramación', 'Reprogramada'];

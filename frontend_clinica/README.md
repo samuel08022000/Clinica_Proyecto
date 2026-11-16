@@ -1,13 +1,35 @@
-# Frontend clínico Laravel Blade
+# Frontend clínico Laravel 13 + PostgreSQL 16
 
-PHP 8.5 y Laravel 13. La identidad y las operaciones clínicas se validan en Quarkus; Laravel conserva su Bearer en una sesión de servidor y comprueba autorización remota para cada panel.
+Aplicación principal del **Sistema de Control de Citas Médicas** sobre **PHP 8.5**, **Laravel 13**, **Laravel Blade**, **Vite** y **PostgreSQL 16** (conexión `clinical`).
 
-Desde esta carpeta, instalar dependencias con `composer install` y `npm.cmd ci`. Configurar un entorno local privado solo si aún no existe. Ejecutar Laravel con `php artisan serve --host=127.0.0.1 --port=8000` y Vite en otra terminal con `npm.cmd run dev`. `QUARKUS_API_URL` debe apuntar a la API autorizada, habitualmente `http://127.0.0.1:8080/api/v1`.
+## Instalación local de dependencias
 
-El login no precarga cuentas demo. No hay credenciales administrativas predeterminadas. Los paneles de Administración y Secretaría consumen datos reales; una caída de Quarkus impide operar y muestra error. Paciente y Médico conservan sus inicios autenticados, sin anunciar un panel operativo inexistente.
+Desde `frontend_clinica/`:
 
-No ejecutar migraciones Laravel contra PostgreSQL clínico. Se conservaron sus migraciones de infraestructura users/cache/jobs y el modelo configurado del framework; DatabaseSeeder ya no crea Test User. Los scripts Composer no ejecutan migraciones automáticamente. Las nuevas configuraciones de ejemplo usan sesiones y caché de archivo sin exigir tablas Laravel.
+```powershell
+composer install
+npm.cmd ci
+npm.cmd run build
+```
 
-Pruebas: `php artisan test`, `php artisan view:cache`, `php artisan route:list`, `php vendor/bin/pint --test` y `npm.cmd run build`. Los `Http::fake` y fixtures se mantienen exclusivamente en tests. Las suites LiveBackendIntegrationTest y LiveHttpStackTest requieren activación y servidores aislados: no apuntarlas a datos habituales.
+Configurar un archivo `.env` local a partir de `.env.example` únicamente si no existe (`php artisan key:generate`). Las migraciones SQLite locales (`php artisan migrate`) gestionan exclusivamente sesiones, caché y desafíos temporales de Laravel — **nunca migran el esquema clínico PostgreSQL**, que reside en [../database_clinica/migration/](../database_clinica/migration/).
 
-Ver [arranque e integración](../docs/ejecucion-integracion.md), [DBeaver](../docs/configuracion-dbeaver.md), [migraciones](../backend_clinica/src/main/resources/db/migration/README.md) e [informe de Fase 13](../docs/fase13-auditoria.md).
+## Ejecución con PostgreSQL 16 clínico aislado
+
+Desde la raíz del proyecto en Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clinical\Start-Database.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clinical\Invoke-Laravel.ps1 serve --host=127.0.0.1 --port=8000
+```
+
+`scripts/clinical/Invoke-Laravel.ps1` inyecta en memoria las credenciales privadas de `.local/clinical-phase1/` para la conexión `clinical` sin exponer secretos en archivos versionados ni argumentos.
+
+## Pruebas y calidad
+
+- Suite Feature: `php vendor/bin/phpunit`
+- Suite PostgreSQL real aislada (desde raíz): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clinical\Invoke-Laravel.ps1 -TestDatabase vendor/bin/phpunit tests/Postgres`
+- Estilo PHP: `php vendor/bin/pint --test`
+- Rutas y vistas: `php artisan route:list`, `php artisan view:cache`, `npm.cmd run build`
+
+Ver [README principal](../README.md), [documentación de base de datos](../database_clinica/README.md) y [guía DBeaver](../docs/configuracion-dbeaver.md).

@@ -12,9 +12,9 @@ class AgendaController extends AdminController
     public function index(Request $request)
     {
         $request->validate(['medico' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]+$/', 'max:20']]);
-        $doctors = $this->api->administrative('GET', 'personal/medicos');
-        $doctor = $request->filled('medico') ? $this->api->administrative('GET', 'personal/medicos/'.$request->query('medico')) : null;
-        $schedules = $doctor ? $this->api->administrative('GET', 'administracion/medicos/'.$doctor['codMed'].'/horarios') : [];
+        $doctors = $this->backend->request('GET', 'personal/medicos');
+        $doctor = $request->filled('medico') ? $this->backend->request('GET', 'personal/medicos/'.$request->query('medico')) : null;
+        $schedules = $doctor ? $this->backend->request('GET', 'administracion/medicos/'.$doctor['codMed'].'/horarios') : [];
 
         return view('administracion.agendas.index', compact('doctors', 'doctor', 'schedules'));
     }
@@ -31,10 +31,10 @@ class AgendaController extends AdminController
 
     private function form(string $medico, ?string $horario = null)
     {
-        $doctor = $this->api->administrative('GET', 'personal/medicos/'.$medico);
+        $doctor = $this->backend->request('GET', 'personal/medicos/'.$medico);
         $record = [];
         if ($horario) {
-            $rows = $this->api->administrative('GET', 'administracion/medicos/'.$medico.'/horarios');
+            $rows = $this->backend->request('GET', 'administracion/medicos/'.$medico.'/horarios');
             $record = collect($rows)->firstWhere('codHor', $horario);
             abort_unless($record, 404);
         }
@@ -68,7 +68,7 @@ class AgendaController extends AdminController
 
     private function assertSchedule(string $medico, string $horario): void
     {
-        $rows = $this->api->administrative('GET', 'administracion/medicos/'.$medico.'/horarios');
+        $rows = $this->backend->request('GET', 'administracion/medicos/'.$medico.'/horarios');
         abort_unless(collect($rows)->contains('codHor', $horario), 404);
     }
 

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Secretaria;
 
-use App\Exceptions\QuarkusApiException;
+use App\Exceptions\ClinicalOperationException;
 use App\Http\Requests\Secretaria\ReservationBrowseRequest;
 use App\Http\Requests\Secretaria\ReservationRequest;
 use Carbon\CarbonImmutable;
@@ -16,6 +16,19 @@ class ReservaController extends ReceptionController
     public function create(ReservationBrowseRequest $request): View
     {
         $filters = array_filter($request->validated(), fn ($value) => $value !== null && $value !== '');
+        $referral = null;
+        if (isset($filters['codDer'])) {
+            $referral = $this->read('derivaciones/'.$filters['codDer']);
+            if (($referral['estado'] ?? null) !== 'Pendiente' || filled($referral['codCitHija'] ?? null)) {
+                throw new ClinicalOperationException(409, 'La derivación ya no está disponible para reserva.', 'DERIVACION_CONSUMIDA');
+            }
+            // El ticket servidor es la autoridad; no se aceptan destinos manipulados en la URL.
+            $filters['codPac'] = $referral['codPac'];
+            $filters['codEsp'] = $referral['codEspDestino'];
+            if (filled($referral['codMedDestino'] ?? null)) {
+                $filters['codMed'] = $referral['codMedDestino'];
+            }
+        }
         $patient = isset($filters['codPac']) ? $this->read('pacientes/'.$filters['codPac']) : null;
         $patients = ! $patient && isset($filters['q']) ? $this->read('pacientes', ['q' => $filters['q']])['pacientes'] : null;
         $specialties = $patient && $patient['habilitadoParaReservar'] ? $this->read('especialidades') : [];
@@ -37,7 +50,7 @@ class ReservaController extends ReceptionController
                         $message = 'El turno seleccionado ya no está disponible. Elige otro horario.';
                     }
                 }
-            } catch (QuarkusApiException $exception) {
+            } catch (ClinicalOperationException $exception) {
                 if (! in_array($exception->status, [400, 409, 422], true)) {
                     throw $exception;
                 }
@@ -48,7 +61,7 @@ class ReservaController extends ReceptionController
         $today = CarbonImmutable::now('America/La_Paz')->toDateString();
         $lastDay = CarbonImmutable::now('America/La_Paz')->addDays(14)->toDateString();
         $view = view($selected ? 'secretaria.reservas.confirm' : 'secretaria.reservas.create',
-            compact('patient', 'patients', 'specialties', 'specialty', 'doctors', 'slots', 'selected', 'filters', 'today', 'lastDay'));
+            compact('patient', 'patients', 'specialties', 'specialty', 'doctors', 'slots', 'selected', 'filters', 'referral', 'today', 'lastDay'));
         if ($message) {
             $view->with('errors', (new ViewErrorBag)->put('default', new MessageBag(['api' => $message])));
         }
@@ -60,14 +73,14 @@ class ReservaController extends ReceptionController
     {
         $data = $request->validated();
         try {
-            $appointment = $this->write('citas', array_intersect_key($data, array_flip(['codPac', 'codSlot'])), 'Confirmada');
-        } catch (QuarkusApiException $exception) {
+            $appointment = $this->write('citas', array_intersect_key($data, array_flip(['codPac', 'codSlot', 'codDer'])), 'Confirmada');
+        } catch (ClinicalOperationException $exception) {
             if (! in_array($exception->status, [400, 409, 422, 502, 503], true)) {
                 throw $exception;
             }
 
             // Re-query slots on the redirected GET; never keep the rejected slot selected.
-            return redirect()->route('secretaria.reservas.create', array_intersect_key($data, array_flip(['codPac', 'codEsp', 'codMed', 'fecha'])))
+            return redirect()->route('secretaria.reservas.create', array_intersect_key($data, array_flip(['codPac', 'codEsp', 'codMed', 'fecha', 'codDer'])))
                 ->withErrors(['api' => $exception->status >= 500
                     ? 'No se pudo confirmar el resultado de la reserva. Consulta las citas del paciente antes de reintentar.' : $exception->getMessage()])
                 ->with('api_status', $exception->status);

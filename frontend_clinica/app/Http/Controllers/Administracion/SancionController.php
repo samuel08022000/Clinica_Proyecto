@@ -8,7 +8,7 @@ class SancionController extends AdminController
 {
     public function create(string $paciente)
     {
-        return view('administracion.sanciones.form', ['record' => $this->api->administrative('GET', 'administracion/pacientes/'.$paciente)]);
+        return view('administracion.sanciones.form', ['record' => $this->backend->request('GET', 'administracion/pacientes/'.$paciente)]);
     }
 
     public function store(SancionRequest $request, string $paciente)
@@ -21,7 +21,7 @@ class SancionController extends AdminController
     public function show(string $paciente, string $sancion)
     {
         return view('administracion.sanciones.show', [
-            'record' => $this->api->administrative('GET', 'administracion/pacientes/'.$paciente.'/sanciones/'.$sancion),
+            'record' => $this->backend->request('GET', 'administracion/pacientes/'.$paciente.'/sanciones/'.$sancion),
         ]);
     }
 }
