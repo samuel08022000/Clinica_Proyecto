@@ -42,6 +42,10 @@ return [
         'password_reset' => env('QUARKUS_PASSWORD_RESET_ENDPOINT', 'auth/password/reset'),
     ],
 
+    'patient_api' => [
+    'driver' => env('PATIENT_API_DRIVER', 'mock'),
+    ],
+
     'features' => [
         'google_oauth' => env('CLINIC_GOOGLE_OAUTH_ENABLED', false),
         'google_redirect_uri' => env('GOOGLE_REDIRECT_URI', 'http://127.0.0.1:8000/auth/google/callback'),
