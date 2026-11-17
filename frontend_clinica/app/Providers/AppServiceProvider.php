@@ -13,6 +13,8 @@ use App\Services\Paciente\PatientAppointmentService;
 use App\Services\Paciente\PatientAvailabilityService;
 use App\Services\Paciente\PatientProfileService;
 use Illuminate\Support\ServiceProvider;
+use App\Services\Auth\GoogleOidcIdentityProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,17 +24,13 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(ClinicalActorProvider::class, LaravelClinicalActorProvider::class);
-        $this->app->bind(GoogleIdentityProvider::class, UnavailableGoogleIdentityProvider::class);
+       $this->app->bind(GoogleIdentityProvider::class, GoogleOidcIdentityProvider::class);
         $this->app->bind(PatientProfileProvider::class, PatientProfileService::class);
         $this->app->bind(PatientAvailabilityProvider::class, PatientAvailabilityService::class);
         $this->app->bind(PatientAppointmentManager::class, PatientAppointmentService::class);
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        //
     }
 }

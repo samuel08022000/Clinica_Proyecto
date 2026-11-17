@@ -31,6 +31,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PortalController::class, 'index'])->name('home');
 
+Route::get('/pase-qr/{token}', [\App\Http\Controllers\QrPassController::class, 'show'])
+    ->where('token', '[A-Za-z0-9\-_=\.]+')
+    ->name('pase-qr.show');
+
 Route::controller(AuthController::class)->group(function (): void {
     Route::get('/login', 'showLogin')->name('login');
     Route::post('/login', 'login')->middleware('throttle:5,1,login:')->name('login.attempt');
@@ -170,4 +174,5 @@ Route::prefix('administracion')->name('administracion.')
         Route::get('/pacientes/{paciente}/sanciones/crear', [SancionController::class, 'create'])->whereAlphaNumeric('paciente')->name('sanciones.create');
         Route::post('/pacientes/{paciente}/sanciones', [SancionController::class, 'store'])->whereAlphaNumeric('paciente')->name('sanciones.store');
         Route::get('/pacientes/{paciente}/sanciones/{sancion}', [SancionController::class, 'show'])->whereAlphaNumeric(['paciente', 'sancion'])->name('sanciones.show');
+
     });

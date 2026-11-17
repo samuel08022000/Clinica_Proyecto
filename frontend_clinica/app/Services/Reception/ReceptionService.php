@@ -257,6 +257,9 @@ class ReceptionService
 
     private function checkin(string $token): array
     {
+        if (str_contains($token, '/pase-qr/')) {
+            $token = basename((string) parse_url($token, PHP_URL_PATH));
+        }
         if ($token === '' || strlen($token) > 4096) {
             throw new ClinicalOperationException(400, 'El QR no es válido.', 'QR_INVALIDO');
         }
@@ -269,7 +272,6 @@ class ReceptionService
 
         return $this->attendance($code);
     }
-
     private function cancel(string $code, array $data): array
     {
         $user = $this->roles->require('ROL002');

@@ -140,3 +140,29 @@
 @media (prefers-reduced-motion: reduce) {
     .pac-nav__link, .pac-slot span, .field select, .field textarea { transition: none; }
 }
+
+/* Pase QR de confirmación */
+.pac-qr-box {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    background: var(--surface);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+    text-align: center;
+}
+.pac-qr-box__frame {
+    padding: 0.75rem;
+    background: #fff;
+    border: 1px solid #dce5e8;
+    border-radius: var(--radius);
+}
+.pac-qr-box__frame img {
+    width: 13.5rem;
+    height: 13.5rem;
+}
+.pac-qr-box__note {
+    color: var(--muted);
+    font-size: var(--step-small);
+}

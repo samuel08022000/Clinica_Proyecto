@@ -50,3 +50,18 @@
         </div>
     @endif
 @endsection
+
+@if (! empty($qrBase64))
+        <section class="pac-panel" aria-labelledby="qr-cita-title">
+            <h2 id="qr-cita-title">Pase QR de confirmación</h2>
+            <div class="pac-qr-box">
+                <div class="pac-qr-box__frame">
+                    <img src="data:image/png;base64,{{ $qrBase64 }}"
+                         alt="Código QR de cita {{ $cita['codCit'] }}">
+                </div>
+                <p class="pac-qr-box__note">
+                    Presenta este código en recepción al llegar a la clínica para confirmar tu identidad. También lo enviamos a tu correo electrónico.
+                </p>
+            </div>
+        </section>
+    @endif
