@@ -10,7 +10,9 @@ use Endroid\QrCode\ErrorCorrectionLevel;
 use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use LogicException;
 use RuntimeException;
 use Throwable;
 
@@ -46,14 +48,64 @@ class AppointmentNotificationService
              FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
              WHERE n.cod_cit=c.cod_cit AND c.cod_cit=? AND p.cod_usu=?
                AND n.canal='Email' AND n.tipo_alerta='Confirmacion'
-               AND n.estado='Pendiente' AND n.intentos>0 AND n.intentos<n.max_intentos
+               AND n.estado='Pendiente' AND n.intentos<n.max_intentos
                AND c.estado='Confirmada' AND c.fecha+c.hora_fin>ahora_clinica()
-               AND n.fecha_programada>now() AND n.fecha_programada<=now()+interval '60 minutes'",
+               AND n.fecha_programada<=now()+interval '60 minutes'",
             [$code, $user->cod_usu],
         );
         if ($changed === 0) {
             throw new ClinicalOperationException(409, 'El correo ya fue procesado, está pendiente o agotó sus reintentos. Consulta las notificaciones.', 'CONFLICTO');
         }
+    }
+
+    /** Envía únicamente la confirmación existente de una operación ya confirmada. */
+    public function sendConfirmation(string $code): string
+    {
+        try {
+            $db = $this->db();
+            if ($db->transactionLevel() !== 0) {
+                throw new LogicException('La reserva debe estar confirmada antes de enviar su QR.');
+            }
+            $this->assertMailTransport();
+            $notice = $db->selectOne(
+                "UPDATE notificaciones n SET estado='EnProceso', intentos=n.intentos+1,
+                    en_proceso_desde=now(), ultimo_error=NULL
+                 WHERE n.cod_not=(
+                    SELECT candidate.cod_not FROM notificaciones candidate
+                    WHERE candidate.cod_cit=? AND candidate.canal='Email' AND candidate.tipo_alerta='Confirmacion'
+                      AND candidate.estado='Pendiente' AND candidate.intentos<candidate.max_intentos
+                      AND candidate.fecha_programada<=now()
+                    ORDER BY candidate.cod_not DESC LIMIT 1 FOR UPDATE SKIP LOCKED
+                 )
+                 RETURNING n.cod_not AS id_notificacion,n.cod_usu AS usuario,n.cod_cit AS cita,
+                    n.canal AS canal_salida,n.tipo_alerta AS tipo,n.destinatario AS destino,
+                    n.mensaje,n.intentos AS numero_intento", [$code],
+            );
+            if ($notice !== null) {
+                $this->processNotice($notice);
+            }
+
+            return $this->confirmationStatus($code)['correoEstado'] ?? 'NoDisponible';
+        } catch (Throwable $error) {
+            Log::warning('No se pudo procesar la confirmación QR.', ['cita' => $code, 'tipo' => $error::class]);
+
+            return 'Pendiente';
+        }
+    }
+
+    /** Consulta operativa sin exponer destinatarios, tokens ni credenciales. */
+    public function confirmationStatus(string $code): array
+    {
+        return (array) ($this->db()->selectOne(
+            "SELECT c.cod_cit AS \"codCit\", c.estado, c.fecha, p.email_verificado AS \"correoVerificado\",
+                n.estado AS \"correoEstado\", n.intentos, n.enviado_en AS \"enviadoEn\",
+                CASE WHEN n.ultimo_error LIKE 'SMTP_AUTH:%' THEN 'SMTP_AUTH'
+                     WHEN n.ultimo_error LIKE 'SMTP_CONNECTION:%' THEN 'SMTP_CONNECTION'
+                     WHEN n.ultimo_error IS NOT NULL THEN 'MAIL_ERROR' ELSE NULL END AS \"errorCodigo\"
+             FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
+             LEFT JOIN notificaciones n ON n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta='Confirmacion'
+             WHERE c.cod_cit=? ORDER BY n.cod_not DESC LIMIT 1", [$code],
+        ) ?? []);
     }
 
     /** @return array{enviadas:int, errores:int, descartadas:int} */
@@ -63,17 +115,29 @@ class AppointmentNotificationService
         $batch = $this->db()->select('SELECT * FROM public.tomar_notificaciones(?)', [$limit]);
         $result = ['enviadas' => 0, 'errores' => 0, 'descartadas' => 0];
         foreach ($batch as $notice) {
-            try {
-                $result[$this->deliver($notice)]++;
-            } catch (Throwable) {
-                $this->db()->scalar('SELECT public.finalizar_notificacion(?,false,?)', [
-                    $notice->id_notificacion, 'Error recuperable de transporte o de generación del pase.',
-                ]);
-                $result['errores']++;
-            }
+            $result[$this->processNotice($notice)]++;
         }
 
         return $result;
+    }
+
+    private function processNotice(object $notice): string
+    {
+        try {
+            return $this->deliver($notice);
+        } catch (Throwable $error) {
+            $description = strtolower($error->getMessage());
+            $safeError = match (true) {
+                str_contains($description, 'authenticate'), str_contains($description, '535'), str_contains($description, '534') => 'SMTP_AUTH: El servidor rechazó la autenticación configurada.',
+                str_contains($description, 'connect'), str_contains($description, 'timed out'), str_contains($description, 'getaddrinfo') => 'SMTP_CONNECTION: No se pudo conectar con el transporte de correo.',
+                default => 'Error recuperable de transporte o de generación del pase.',
+            };
+            $this->db()->scalar('SELECT public.finalizar_notificacion(?,false,?)', [
+                $notice->id_notificacion, $safeError,
+            ]);
+
+            return 'errores';
+        }
     }
 
     private function deliver(object $notice): string

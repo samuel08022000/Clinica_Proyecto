@@ -6,6 +6,7 @@ use App\Exceptions\AuthDomainException;
 use App\Exceptions\ClinicalOperationException;
 use App\Models\Usuario;
 use App\Services\Auth\AccountStatusService;
+use App\Services\Notifications\AppointmentNotificationService;
 use App\Services\Reception\ReceptionService;
 use App\Support\AppointmentPresentation;
 use Illuminate\Database\QueryException;
@@ -34,6 +35,8 @@ class SecretariaPanelTest extends TestCase
         parent::setUp();
         $this->travelTo(Carbon::parse('2026-11-12 15:00:00', 'America/La_Paz'));
         $this->withoutVite();
+        $notifications = $this->partialMock(AppointmentNotificationService::class);
+        $notifications->shouldReceive('sendConfirmation')->byDefault()->andReturn('Pendiente');
 
         $accounts = Mockery::mock(AccountStatusService::class);
         $accounts->shouldReceive('requireActive')->andReturnUsing(function (string $userId): object {

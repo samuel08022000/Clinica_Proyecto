@@ -2,6 +2,12 @@
 
 Fecha: 17 de noviembre de 2026, America/La_Paz.
 
+**Actualización posterior al reporte inicial — envío inmediato del QR:** se confirmó que el scheduler no estaba activo y por eso una confirmación permanecía Pendiente con cero intentos. Las reservas y reprogramaciones de Paciente y Secretaría ahora intentan enviar su confirmación al terminar la operación confirmada en PostgreSQL, reclamando únicamente el aviso existente de esa cita. El scheduler sigue atendiendo reintentos y recordatorios; ya no es requisito para el primer envío. Se agregó el botón «Enviar QR a mi correo» para confirmaciones anteriores aún pendientes, sin crear otra reserva.
+
+La ampliación V12 concede únicamente la actualización del contador de intentos al rol de la aplicación; incluye reversión y se aplica con el script existente. Las pruebas de correo permanecen aisladas. Además, por solicitud expresa del usuario, se procesó la confirmación real de `CIT00000001`: SMTP la aceptó el **17/11/2026 a las 22:08:50, America/La_Paz**, con **un intento** y sin error. Una segunda invocación conservó el mismo contador y fecha, sin reenviar. Esa aceptación no certifica recepción en bandeja; el check-in continúa habilitado para el día de la cita.
+
+Verificación posterior: **287 pruebas Feature aprobadas**, 1742 aserciones; integración adicional de envío inmediato Web/Ventanilla con adjunto PNG, sin scheduler, sin procesar avisos ajenos y sin duplicación. Las secciones siguientes conservan los resultados y límites de la auditoría inicial.
+
 Se contrastaron las páginas 17–20 de `C:/Users/LENOVO/Downloads/EVALUACION PROCESUAL.pdf`, el código Laravel, PostgreSQL real y pruebas ejecutadas. No se utilizaron README ni auditorías históricas como evidencia. La ejecución clínica actual está en Laravel; estas correcciones no necesitan Quarkus.
 
 ## 1. Diagnóstico inicial

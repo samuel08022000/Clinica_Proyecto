@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Secretaria;
 use App\Exceptions\ClinicalOperationException;
 use App\Http\Requests\Secretaria\ReservationBrowseRequest;
 use App\Http\Requests\Secretaria\ReservationRequest;
+use App\Services\Notifications\AppointmentNotificationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\MessageBag;
@@ -86,6 +87,10 @@ class ReservaController extends ReceptionController
                 ->with('api_status', $exception->status);
         }
 
-        return redirect()->route('secretaria.citas.show', $appointment['codCit'])->with('success', 'Reserva confirmada por el servicio de citas.');
+        $mailState = app(AppointmentNotificationService::class)->sendConfirmation($appointment['codCit']);
+
+        return redirect()->route('secretaria.citas.show', $appointment['codCit'])->with('success', 'Reserva confirmada. '.($mailState === 'Enviada'
+            ? 'El correo con el pase QR fue aceptado por el transporte.'
+            : 'El correo QR está pendiente; el paciente puede solicitar su envío desde el detalle.'));
     }
 }

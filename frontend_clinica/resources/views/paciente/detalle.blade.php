@@ -19,8 +19,8 @@
                 'Cancelada' => 'Envío cancelado por un cambio de la cita.',
                 default => ($cita['correoIntentos'] ?? 0) > 0 ? 'Error recuperable. Hay un reintento programado.' : 'Pendiente de envío.',
             } }}</p>
-            @if($cita['correoEstado'] === 'Pendiente' && ($cita['correoIntentos'] ?? 0) > 0 && $cita['estado'] === 'Confirmada')
-                <form method="POST" action="{{ route('paciente.citas.correo-qr', $cita['codCit']) }}">@csrf<button class="button button--secondary">Reintentar correo</button></form>
+            @if($cita['correoEstado'] === 'Pendiente' && $cita['estado'] === 'Confirmada')
+                <form method="POST" action="{{ route('paciente.citas.correo-qr', $cita['codCit']) }}">@csrf<button class="button button--secondary">{{ ($cita['correoIntentos'] ?? 0) > 0 ? 'Reintentar correo' : 'Enviar QR a mi correo' }}</button></form>
             @endif
         </section>
     @endif

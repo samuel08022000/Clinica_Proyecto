@@ -20,4 +20,6 @@ foreach ($functionName in @('tomar_notificaciones', 'procesar_evento_cita', 'rep
 $fileName = if ($Rollback) { 'U11__permisos_notificaciones.sql' } else { 'V11__permisos_notificaciones.sql' }
 $migrationSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot "database_clinica/upgrade/$fileName") -Raw -Encoding UTF8
 $null = Invoke-ClinicalSql $migrationSql $targetDatabase
+$immediateFile = if ($Rollback) { 'U12__envio_inmediato_qr.sql' } else { 'V12__envio_inmediato_qr.sql' }
+$null = Invoke-ClinicalSql (Get-Content -LiteralPath (Join-Path $ClinicalRoot "database_clinica/upgrade/$immediateFile") -Raw -Encoding UTF8) $targetDatabase
 Write-Output "${targetDatabase}: migración de notificaciones y derivaciones $(if ($Rollback) {'revertida'} else {'aplicada'}); historiales conservados."

@@ -93,9 +93,12 @@ final class AppointmentController extends Controller
     public function store(ReserveRequest $request): RedirectResponse
     {
         $appointment = $this->appointments->reserve($request->validated('codSlot'));
+        $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
 
         return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue confirmada. El correo QR está pendiente de procesamiento; tu pase está disponible aquí.');
+            ->with('success', 'Tu cita fue confirmada. '.($mailState === 'Enviada'
+                ? 'El correo con tu pase QR fue aceptado por el transporte de correo.'
+                : 'El correo QR sigue pendiente; puedes solicitar su envío desde aquí.'));
     }
 
     public function show(string $cita): View
@@ -169,9 +172,12 @@ final class AppointmentController extends Controller
             $validated['codSlotNuevo'],
             $validated['motivo'],
         );
+        $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
 
         return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue reprogramada. El nuevo pase está disponible aquí y su correo está pendiente de procesamiento.');
+            ->with('success', 'Tu cita fue reprogramada. '.($mailState === 'Enviada'
+                ? 'El correo con tu nuevo pase QR fue aceptado por el transporte de correo.'
+                : 'El nuevo pase está disponible aquí; su correo sigue pendiente de envío.'));
     }
 
     /** @return array<string, mixed> */

@@ -30,10 +30,14 @@ class PatientPanelTest extends TestCase
 
     private MockInterface $profiles;
 
+    private MockInterface $notifications;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->withoutVite();
+        $this->notifications = $this->partialMock(AppointmentNotificationService::class);
+        $this->notifications->shouldReceive('sendConfirmation')->byDefault()->andReturn('Pendiente');
 
         $status = Mockery::mock(AccountStatusService::class);
         $status->shouldReceive('requireActive')->andReturnUsing(function (string $userId): object {
@@ -129,12 +133,30 @@ class PatientPanelTest extends TestCase
         );
     }
 
-    public function test_booking_never_claims_a_mail_delivery_before_the_worker_runs(): void
+    public function test_pending_mail_does_not_claim_delivery_after_booking(): void
     {
         $this->appointments->shouldReceive('reserve')->once()->with('SLOT0001')->andReturn($this->appointment('CIT0004'));
         $this->patient()->post(route('paciente.citas.store'), ['codSlot' => 'SLOT0001'])
             ->assertRedirect(route('paciente.citas.show', 'CIT0004'))
             ->assertSessionHas('success', fn ($message) => str_contains($message, 'pendiente') && ! str_contains($message, 'enviamos'));
+    }
+
+    public function test_booking_sends_the_qr_after_the_reservation_is_confirmed(): void
+    {
+        $confirmed = false;
+        $this->appointments->shouldReceive('reserve')->once()->with('SLOT0001')->andReturnUsing(function () use (&$confirmed) {
+            $confirmed = true;
+
+            return $this->appointment('CIT0004');
+        });
+        $this->notifications->shouldReceive('sendConfirmation')->once()->with('CIT0004')->andReturnUsing(function () use (&$confirmed) {
+            $this->assertTrue($confirmed);
+
+            return 'Enviada';
+        });
+        $this->patient()->post(route('paciente.citas.store'), ['codSlot' => 'SLOT0001'])
+            ->assertRedirect(route('paciente.citas.show', 'CIT0004'))
+            ->assertSessionHas('success', fn ($message) => str_contains($message, 'aceptado'));
     }
 
     public function test_recoverable_mail_status_is_rendered_without_hiding_the_appointment(): void

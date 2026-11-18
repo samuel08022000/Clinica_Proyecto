@@ -7,6 +7,7 @@ use App\Http\Requests\Secretaria\AppointmentActionRequest;
 use App\Http\Requests\Secretaria\AppointmentFiltersRequest;
 use App\Http\Requests\Secretaria\RescheduleRequest;
 use App\Http\Requests\Secretaria\ReservationBrowseRequest;
+use App\Services\Notifications\AppointmentNotificationService;
 use App\Support\AppointmentPresentation;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
@@ -54,6 +55,7 @@ class CitaController extends ReceptionController
     public function rescheduleStore(RescheduleRequest $request, string $cita): RedirectResponse
     {
         $result = $this->write('citas/'.$cita.'/reprogramar', $request->safe()->only(['codSlot', 'motivo']), 'Confirmada');
+        app(AppointmentNotificationService::class)->sendConfirmation($result['codCit']);
 
         return redirect()->route('secretaria.citas.show', $result['codCit'])
             ->with('success', 'La cita fue reprogramada conservando su trazabilidad.')

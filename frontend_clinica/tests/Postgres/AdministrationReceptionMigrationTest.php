@@ -472,6 +472,36 @@ final class AdministrationReceptionMigrationTest extends TestCase
         $this->assertSame($this->owner->query("SELECT (now() AT TIME ZONE 'America/La_Paz')::date")->fetchColumn(), $db->scalar('SELECT fecha_clinica()'));
     }
 
+    #[Test]
+    public function qr_confirmation_is_sent_immediately_once_for_desk_and_web_without_a_scheduler(): void
+    {
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $date = $this->owner->query('SELECT fecha_clinica()+1')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $response = $this->post('/secretaria/reservas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot'], 'confirmacion' => 1])->assertRedirect();
+        $code = basename($response->headers->get('Location'));
+        $worker = app(AppointmentNotificationService::class);
+        $this->assertSame('Enviada', $worker->confirmationStatus($code)['correoEstado']);
+        $untouched = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[1]['codSlot']]);
+        $this->assertSame('Pendiente', DB::connection('clinical')->transaction(fn () => $worker->sendConfirmation($untouched['codCit'])));
+        $this->assertSame('Enviada', $worker->sendConfirmation($code));
+        $this->assertSame(1, $worker->confirmationStatus($code)['intentos']);
+        $this->assertSame(0, $worker->confirmationStatus($untouched['codCit'])['intentos']);
+        $messages = Mail::mailer()->getSymfonyTransport()->messages();
+        $this->assertCount(1, $messages);
+        $this->assertSame('image/png', $messages->first()->getOriginalMessage()->getAttachments()[0]->getMediaType().'/'.$messages->first()->getOriginalMessage()->getAttachments()[0]->getMediaSubtype());
+        $patientUser = $this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]);
+        $this->login($patientUser);
+        $this->post('/paciente/citas', ['codSlot' => $slots[2]['codSlot']])->assertRedirect();
+        $webCode = $this->scalar('SELECT cod_cit FROM citas WHERE cod_slot=?', [$slots[2]['codSlot']]);
+        $this->assertSame('Enviada', $worker->confirmationStatus($webCode)['correoEstado']);
+        $this->assertSame(1, $worker->confirmationStatus($webCode)['intentos']);
+        $this->assertCount(2, $messages);
+        $this->assertSame(3, (int) $this->scalar('SELECT count(*) FROM citas WHERE cod_pac=?', [$patient]));
+    }
+
     private function operationalFixture(bool $today = false): array
     {
         $admin = $this->identity('ROL004');

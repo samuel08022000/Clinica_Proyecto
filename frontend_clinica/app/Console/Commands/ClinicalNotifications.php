@@ -8,7 +8,7 @@ use Throwable;
 
 class ClinicalNotifications extends Command
 {
-    protected $signature = 'clinical:notifications {--limit=50} {--check : Revisa configuración sin consumir avisos ni enviar correos}';
+    protected $signature = 'clinical:notifications {--limit=50} {--check : Revisa configuración sin consumir avisos ni enviar correos} {--appointment= : Procesa únicamente la confirmación de esta cita} {--inspect : Consulta estado sin enviar}';
 
     protected $description = 'Procesa confirmaciones, alertas y recordatorios de la outbox clínica';
 
@@ -21,6 +21,21 @@ class ClinicalNotifications extends Command
             return self::INVALID;
         }
         try {
+            if ($this->option('appointment')) {
+                $code = (string) $this->option('appointment');
+                if (! preg_match('/^CIT[0-9]+$/D', $code)) {
+                    return self::INVALID;
+                }
+                if (! $this->option('inspect') && ! $this->option('check')) {
+                    $state = $notifications->sendConfirmation($code);
+                    $this->line(json_encode($notifications->confirmationStatus($code)));
+
+                    return $state === 'Enviada' ? self::SUCCESS : self::FAILURE;
+                }
+                $this->line(json_encode($notifications->confirmationStatus($code)));
+
+                return self::SUCCESS;
+            }
             if ($this->option('check')) {
                 $notifications->assertMailTransport();
                 $this->line(json_encode([

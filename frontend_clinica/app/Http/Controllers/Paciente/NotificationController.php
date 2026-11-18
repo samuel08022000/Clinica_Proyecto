@@ -17,8 +17,11 @@ class NotificationController extends Controller
     public function retry(string $cita, AppointmentNotificationService $notifications): RedirectResponse
     {
         $notifications->retryConfirmation($cita);
+        $mailState = $notifications->sendConfirmation($cita);
 
         return redirect()->route('paciente.citas.show', $cita)
-            ->with('success', 'Se solicitó un reintento del correo. No se creó otra cita.');
+            ->with('success', $mailState === 'Enviada'
+                ? 'El correo con tu pase QR fue aceptado por el transporte. No se creó otra cita.'
+                : 'No se pudo confirmar el envío. Tu QR sigue disponible y la cita se conserva.');
     }
 }
