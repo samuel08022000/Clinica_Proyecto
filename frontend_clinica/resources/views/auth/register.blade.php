@@ -38,7 +38,7 @@
                 @include('layouts.alerts')
 
                 <a class="button button--google button--full" href="{{ $googleEnabled ? route('google.register') : '#' }}" @unless($googleEnabled) aria-disabled="true" tabindex="-1" @endunless>
-                    Registrarme con Google
+                    Registrarse con Google
                 </a>
                 <p class="integration-note">
                     {{ $googleEnabled ? 'Google confirma tu identidad y correo; luego completarás únicamente los datos clínicos obligatorios.' : 'El registro tradicional continúa disponible. Google se habilita mediante configuración local.' }}

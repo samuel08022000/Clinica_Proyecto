@@ -204,21 +204,26 @@ final class AuthController extends Controller
 
     public function handleGoogleCallback(Request $request): RedirectResponse
     {
-        $flow = $request->session()->pull('google_oauth_flow');
+        $state = $request->query('state');
+        $flows = $request->session()->get('google_oauth_flows', []);
+        $flow = is_string($state) ? ($flows[$state] ?? null) : null;
         if (! is_array($flow) || ($flow['expires_at'] ?? 0) < time()) {
             return redirect()->route('login')->withErrors(['authentication' => 'La solicitud con Google expiró. Inicia el proceso nuevamente.']);
         }
+        if (! hash_equals((string) ($flow['state'] ?? ''), $state)) {
+            return redirect()->route('login')->withErrors(['authentication' => 'No fue posible validar la seguridad de la respuesta de Google.']);
+        }
+        unset($flows[$state]);
+        $request->session()->put('google_oauth_flows', $flows);
         if ($request->filled('error')) {
             return redirect()->route('login')->withErrors(['authentication' => 'El acceso con Google fue cancelado o rechazado.']);
         }
-        if (! hash_equals((string) ($flow['state'] ?? ''), $request->string('state')->toString())) {
-            return redirect()->route('login')->withErrors(['authentication' => 'No fue posible validar la seguridad de la respuesta de Google.']);
-        }
-        if (! $request->filled('code')) {
+        $code = $request->query('code');
+        if (! is_string($code) || $code === '') {
             return redirect()->route('login')->withErrors(['authentication' => 'Google no devolvió un código de autorización.']);
         }
         try {
-            $result = $this->google->exchange($request, $request->string('code')->toString(), $flow);
+            $result = $this->google->exchange($request, $code, $flow);
 
             return match ($result['status']) {
                 'AUTHENTICATED' => redirect()->route('paciente.home')->with('success', 'Sesión iniciada con Google.'),
@@ -248,9 +253,10 @@ final class AuthController extends Controller
             'fecha_nacimiento' => ['required', 'date', 'before_or_equal:'.$this->clinicalToday()],
             'telefono' => ['required', 'string', 'max:25', 'regex:/^\+?[0-9 ()-]{8,25}$/'],
             'ciudad_residencia' => ['required', 'string', 'min:3', 'max:100']]);
-        $token = (string) $request->session()->pull('google_registration_token', '');
+        $token = (string) $request->session()->get('google_registration_token', '');
         try {
             $result = $this->google->register($request, $token, $valid);
+            $request->session()->forget(['google_registration_token', 'google_registration_name', 'google_registration_email']);
             if ($result['status'] === 'EMAIL_VERIFICATION_REQUIRED') {
                 $this->storeVerificationChallenge($request, $result['verification']);
 
@@ -259,6 +265,12 @@ final class AuthController extends Controller
 
             return redirect()->route('paciente.home')->with('success', 'Cuenta creada e inicio de sesión completado con Google.');
         } catch (AuthDomainException $error) {
+            if (in_array($error->errorCode, ['GOOGLE_CONTINUATION_INVALID', 'GOOGLE_ACCOUNT_CONFLICT', 'GOOGLE_OAUTH_NOT_CONFIGURED'], true)) {
+                $request->session()->forget(['google_registration_token', 'google_registration_name', 'google_registration_email']);
+
+                return redirect()->route('register')->withErrors(['registration' => $this->registrationError($error)]);
+            }
+
             return back()->withInput()->withErrors(['registration' => $this->registrationError($error)]);
         }
     }
@@ -266,17 +278,28 @@ final class AuthController extends Controller
     private function beginGoogle(Request $request, string $intent): RedirectResponse
     {
         try {
+            $redirectUri = (string) config('clinic.features.google_redirect_uri');
+            $parts = parse_url($redirectUri);
+            $origin = ($parts['scheme'] ?? '').'://'.($parts['host'] ?? '').(isset($parts['port']) ? ':'.$parts['port'] : '');
+            if (in_array($parts['scheme'] ?? '', ['http', 'https'], true) && ! empty($parts['host'])
+                && $request->getSchemeAndHttpHost() !== $origin) {
+                return redirect()->away($origin.$request->getPathInfo());
+            }
             $state = Str::random(64);
             $nonce = Str::random(64);
             $verifier = Str::random(96);
             $flow = ['state' => $state, 'nonce' => $nonce, 'verifier' => $verifier,
                 'challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
-                'intent' => $intent, 'expires_at' => time() + 600];
+                'intent' => $intent, 'redirect_uri' => $redirectUri, 'expires_at' => time() + 600];
             $url = $this->google->authorizationUrl($flow);
             if (! str_starts_with($url, 'https://accounts.google.com/')) {
                 throw new AuthDomainException('GOOGLE_AUTHENTICATION_FAILED', 401, 'URL de autorización no válida.');
             }
-            $request->session()->put('google_oauth_flow', $flow);
+            $flows = array_filter($request->session()->get('google_oauth_flows', []),
+                static fn (array $pending): bool => ($pending['expires_at'] ?? 0) >= time());
+            $flows = array_slice($flows, -4, null, true);
+            $flows[$state] = $flow;
+            $request->session()->put('google_oauth_flows', $flows);
 
             return redirect()->away($url);
         } catch (AuthDomainException $error) {
@@ -360,6 +383,7 @@ final class AuthController extends Controller
         return match ($e->errorCode) {
             'EMAIL_ALREADY_REGISTERED' => 'El correo ya está registrado.', 'DOCUMENT_ALREADY_REGISTERED' => 'El documento ya está registrado.',
             'MAIL_TRANSPORT_UNAVAILABLE' => 'La entrega OTP no está configurada. Intenta nuevamente más tarde.',
+            'MAIL_DELIVERY_FAILED' => 'No fue posible enviar el código de verificación. Intenta nuevamente más tarde.',
             'GOOGLE_ACCOUNT_CONFLICT' => 'No fue posible completar el registro con esa identidad de Google.',
             default => $e->status >= 500 ? 'El servicio de registro presentó un error. Intenta nuevamente.' : $e->getMessage()
         };
@@ -380,6 +404,7 @@ final class AuthController extends Controller
     private function googleError(AuthDomainException $e): string
     {
         return match ($e->errorCode) {
+            'GOOGLE_CONNECTION_FAILED' => 'No fue posible establecer una conexión segura con Google. Intenta nuevamente más tarde.',
             'GOOGLE_OIDC_LIBRARY_MISSING', 'GOOGLE_OAUTH_NOT_CONFIGURED' => 'El acceso con Google todavía no está configurado.',
             'GOOGLE_ID_TOKEN_INVALID', 'GOOGLE_AUTHENTICATION_FAILED' => 'Google no pudo validar la autorización. Inicia el proceso nuevamente.',
             default => 'No fue posible continuar con Google.'

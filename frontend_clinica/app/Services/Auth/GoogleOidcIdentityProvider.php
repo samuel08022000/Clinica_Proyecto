@@ -6,6 +6,7 @@ use App\Contracts\GoogleIdentityProvider;
 use App\Exceptions\AuthDomainException;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -68,21 +69,32 @@ final class GoogleOidcIdentityProvider implements GoogleIdentityProvider
         $idToken = $this->requestIdToken($code, $codeVerifier, $redirectUri);
         $claims = $this->verifiedClaims($idToken);
 
-        $issuer = (string) ($claims->iss ?? '');
+        $issuer = $claims->iss ?? null;
         $audience = $claims->aud ?? null;
         $audiences = is_array($audience) ? $audience : [$audience];
-        $nonce = (string) ($claims->nonce ?? '');
+        $nonce = $claims->nonce ?? null;
 
         if (! in_array($issuer, self::ISSUERS, true)
             || ! in_array($this->clientId(), $audiences, true)
+            || (isset($claims->azp) && $claims->azp !== $this->clientId())
+            || (count($audiences) > 1 && ($claims->azp ?? null) !== $this->clientId())
+            || ! is_int($claims->exp ?? null)
+            || ! is_int($claims->iat ?? null)
+            || ! is_string($claims->sub ?? null)
+            || $claims->sub === ''
+            || ! is_string($nonce)
             || $expectedNonce === ''
             || ! hash_equals($expectedNonce, $nonce)) {
             Log::warning('Google OIDC: el ID token no cumple emisor, audiencia o nonce.');
             throw $this->invalidToken();
         }
 
-        $email = mb_strtolower(trim((string) ($claims->email ?? '')));
-        $name = trim((string) ($claims->name ?? $claims->given_name ?? ''));
+        if (! is_string($claims->email ?? null)) {
+            throw $this->invalidToken();
+        }
+        $email = mb_strtolower(trim($claims->email));
+        $nameClaim = $claims->name ?? $claims->given_name ?? '';
+        $name = is_string($nameClaim) ? trim($nameClaim) : '';
         if ($name === '' && $email !== '') {
             $name = (string) strstr($email, '@', true);
         }
@@ -109,16 +121,20 @@ final class GoogleOidcIdentityProvider implements GoogleIdentityProvider
                     'redirect_uri' => $redirectUri,
                     'code_verifier' => $codeVerifier,
                 ]);
-        } catch (\Throwable $e) {
-            Log::warning('Google OIDC: no se pudo contactar el endpoint de tokens.', ['error' => $e::class]);
-            throw new AuthDomainException('GOOGLE_AUTHENTICATION_FAILED', 503, 'No fue posible contactar a Google.');
+        } catch (ConnectionException $e) {
+            preg_match('/cURL error (\d+):/', $e->getMessage(), $curlError);
+            Log::warning('Google OIDC: no se pudo contactar el endpoint de tokens.', [
+                'error' => $e::class, 'curl_errno' => (int) ($curlError[1] ?? 0),
+            ]);
+            throw new AuthDomainException('GOOGLE_CONNECTION_FAILED', 503, 'No fue posible contactar a Google.');
         }
 
         if (! $response->successful()) {
             // Solo el código de error de Google (p. ej. invalid_grant, redirect_uri_mismatch). Nunca el cuerpo completo.
             Log::warning('Google OIDC: el canje del código fue rechazado.', [
                 'status' => $response->status(),
-                'google_error' => (string) $response->json('error', ''),
+                'google_error' => in_array($response->json('error'), ['invalid_grant', 'invalid_client', 'redirect_uri_mismatch', 'invalid_request', 'unauthorized_client'], true)
+                    ? $response->json('error') : 'unknown_error',
             ]);
             throw new AuthDomainException('GOOGLE_AUTHENTICATION_FAILED', 401, 'Google rechazó el código de autorización.');
         }
@@ -178,7 +194,7 @@ final class GoogleOidcIdentityProvider implements GoogleIdentityProvider
         if (! class_exists(JWT::class)) {
             throw new AuthDomainException('GOOGLE_OIDC_LIBRARY_MISSING', 503, 'Falta instalar firebase/php-jwt.');
         }
-        if ($this->clientId() === '' || $this->clientSecret() === '') {
+        if (! $this->available()) {
             throw new AuthDomainException('GOOGLE_OAUTH_NOT_CONFIGURED', 503, 'Google OAuth no está configurado.');
         }
     }

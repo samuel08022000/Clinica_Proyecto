@@ -25,13 +25,17 @@ final class GoogleAuthService
 
     public function authorizationUrl(array $flow): string
     {
-        return $this->provider->authorizationUrl($flow['state'], $flow['nonce'], $flow['challenge'], (string) config('clinic.features.google_redirect_uri'));
+        $this->requireAvailable();
+
+        return $this->provider->authorizationUrl($flow['state'], $flow['nonce'], $flow['challenge'], $flow['redirect_uri']);
     }
 
     public function exchange(Request $request, string $code, array $flow): array
     {
+        $this->requireAvailable();
+
         $identity = $this->validateIdentity($this->provider->exchange(
-            $code, $flow['verifier'], $flow['nonce'], (string) config('clinic.features.google_redirect_uri')));
+            $code, $flow['verifier'], $flow['nonce'], $flow['redirect_uri']));
         $linked = $this->identities->findBySubject($identity['subject']);
         if ($linked) {
             $account = $this->status->requireActive($linked->cod_usu, false);
@@ -56,13 +60,18 @@ final class GoogleAuthService
 
     public function register(Request $request, string $token, array $details): array
     {
-        $continuation = $this->challenges->claim($token, 'google-register')
-            ?? throw new AuthDomainException('GOOGLE_CONTINUATION_INVALID', 401, 'La continuación expiró o ya fue utilizada.');
-        $identity = $this->validateIdentity($continuation->payload);
-        if ($this->identities->findBySubject($identity['subject']) || $this->accounts->findByEmail($identity['email'])) {
-            throw new AuthDomainException('GOOGLE_ACCOUNT_CONFLICT', 409, 'No fue posible completar el registro con Google.');
-        }
-        $userId = $this->identities->registerPatient($identity, $details);
+        $this->requireAvailable();
+
+        [$userId, $identity] = $this->database->connection()->transaction(function () use ($token, $details): array {
+            $continuation = $this->challenges->claim($token, 'google-register')
+                ?? throw new AuthDomainException('GOOGLE_CONTINUATION_INVALID', 401, 'La continuación expiró o ya fue utilizada.');
+            $identity = $this->validateIdentity($continuation->payload);
+            if ($this->identities->findBySubject($identity['subject']) || $this->accounts->findByEmail($identity['email'])) {
+                throw new AuthDomainException('GOOGLE_ACCOUNT_CONFLICT', 409, 'No fue posible completar el registro con Google.');
+            }
+
+            return [$this->identities->registerPatient($identity, $details), $identity];
+        }, 1);
         if (! $identity['emailVerified']) {
             return ['status' => 'EMAIL_VERIFICATION_REQUIRED', 'verification' => $this->otp->issue($userId, $identity['email'])];
         }
@@ -73,6 +82,8 @@ final class GoogleAuthService
 
     public function linkAuthenticated(string $userId, string $token): void
     {
+        $this->requireAvailable();
+
         $continuation = $this->challenges->claim($token, 'google-link')
             ?? throw new AuthDomainException('GOOGLE_CONTINUATION_INVALID', 401, 'La continuación expiró o ya fue utilizada.');
         $identity = $this->validateIdentity($continuation->payload);
@@ -92,6 +103,13 @@ final class GoogleAuthService
     private function continuation(string $purpose, array $identity): string
     {
         return $this->challenges->issue($purpose, null, $identity, 600);
+    }
+
+    private function requireAvailable(): void
+    {
+        if (! $this->available()) {
+            throw new AuthDomainException('GOOGLE_OAUTH_NOT_CONFIGURED', 503, 'Google OAuth no está configurado.');
+        }
     }
 
     private function validateIdentity(array $identity): array

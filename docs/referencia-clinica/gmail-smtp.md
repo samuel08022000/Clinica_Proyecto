@@ -1,71 +1,92 @@
-# Configurar Gmail SMTP para OTP y recuperación
+# Gmail SMTP para OTP en Laravel
 
-El mismo proveedor entrega los OTP de registro y los enlaces de recuperación. El sistema
-inicia con `OTP_DELIVERY_PROVIDER=disabled`. No cambie a SMTP hasta completar
-todos los pasos y probar la cuenta remitente. Las credenciales se guardan únicamente
-en `backend_clinica/.env`, archivo ignorado por Git.
+El registro, el envío y la verificación OTP se ejecutan en `frontend_clinica`.
+El correo se envía directamente con Laravel Mail y Symfony Mailer. No se necesita
+el backend anterior ni sus variables `QUARKUS_MAILER_*` o `OTP_DELIVERY_PROVIDER`.
 
-## Preparar la cuenta de Google
+## Causa del problema
 
-1. Elija la cuenta Gmail que enviará los mensajes de la clínica. Conviene utilizar una
-   cuenta institucional dedicada y no una cuenta personal compartida.
-2. Abra la sección **Seguridad** de la cuenta de Google y active la **Verificación en
-   dos pasos**. Google exige esta protección para crear contraseñas de aplicación.
-3. Abra <https://myaccount.google.com/apppasswords>, vuelva a autenticarse y cree una
-   contraseña para una aplicación identificable, por ejemplo `Clinica Quarkus local`.
-4. Google mostrará una contraseña de aplicación de 16 caracteres una sola vez. No es
-   la contraseña normal de Gmail. Cópiela directamente al `.env` local y no la envíe
-   por chat, correo, capturas ni Git.
+El entorno Laravel conservaba `MAIL_MAILER=log`, host `127.0.0.1`, puerto `2525`
+y credenciales SMTP vacías. `AuthMailService::ensureTransport()` lo rechazaba antes
+de crear la cuenta. `AuthController::registrationError()` convertía ese rechazo en
+"La entrega OTP no está configurada. Intenta nuevamente más tarde."
+No era un rechazo de Gmail: no se estaba intentando una conexión SMTP.
 
-La opción de contraseñas de aplicación puede no aparecer en cuentas de trabajo o
-estudio administradas, cuentas con Protección Avanzada o configuraciones que usan
-exclusivamente llaves de seguridad. En esos casos el administrador debe autorizar SMTP
-o se debe utilizar otro proveedor aprobado.
+## Configurar el remitente
 
-## Configurar `backend_clinica/.env`
+En `frontend_clinica/.env`, ignorado por Git:
 
 ```dotenv
-OTP_DELIVERY_PROVIDER=smtp
-
-QUARKUS_MAILER_HOST=smtp.gmail.com
-QUARKUS_MAILER_PORT=587
-QUARKUS_MAILER_START_TLS=REQUIRED
-QUARKUS_MAILER_TLS=false
-QUARKUS_MAILER_MOCK=false
-QUARKUS_MAILER_LOGIN=REQUIRED
-QUARKUS_MAILER_AUTH_METHODS=DIGEST-MD5 CRAM-SHA256 CRAM-SHA1 CRAM-MD5 PLAIN LOGIN
-
-QUARKUS_MAILER_USERNAME=remitente@gmail.com
-QUARKUS_MAILER_FROM=remitente@gmail.com
-QUARKUS_MAILER_PASSWORD=<contraseña-de-aplicación>
+MAIL_MAILER=smtp
+MAIL_SCHEME=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_REQUIRE_TLS=true
+MAIL_TIMEOUT=15
+MAIL_USERNAME=""
+MAIL_PASSWORD=""
+MAIL_FROM_ADDRESS=""
+MAIL_FROM_NAME="${APP_NAME}"
 ```
 
-`USERNAME` y `FROM` deben corresponder a la cuenta remitente autorizada. No agregue
-comillas ni espacios a la contraseña de aplicación. Mantenga `TLS=false` junto con
-`START_TLS=REQUIRED`: la conexión comienza en el puerto 587 y se eleva obligatoriamente
-a TLS antes de autenticar.
+Complete `MAIL_USERNAME` con la cuenta Gmail remitente y `MAIL_FROM_ADDRESS` con
+esa misma dirección, salvo que tenga un alias de envío autorizado por Gmail.
+Complete `MAIL_PASSWORD` directamente en el archivo con una **nueva contraseña de
+aplicación**, sin los espacios de presentación de Google. No use la contraseña
+normal de Gmail, el secreto de Google OAuth ni credenciales SMTP expuestas.
+No copie secretos en documentación, mensajes, capturas ni commits.
 
-## Reiniciar y comprobar
+Active la verificación en dos pasos de la cuenta y genere la contraseña en
+https://myaccount.google.com/apppasswords con un nombre como `Clinica Laravel`.
+Algunas cuentas administradas requieren autorización de su administrador.
 
-1. Detenga Quarkus si está ejecutándose.
-2. Desde `backend_clinica`, inicie nuevamente `./mvnw quarkus:dev`. La contraseña se
-   evalúa al arrancar; modificar `.env` sin reiniciar no actualiza la conexión.
-3. Registre un paciente ficticio con una dirección que pueda consultar.
-4. Confirme que Laravel muestra que el correo fue entregado al proveedor SMTP.
-5. Revise entrada, promociones y correo no deseado. Use el OTP recibido una sola vez.
-6. Confirme que el login se rechaza antes de validar y funciona después.
-7. Solicite una recuperación desde `/recuperar-contrasena` y compruebe que el enlace
-   recibido permite un único cambio, revoca las sesiones anteriores y exige volver a iniciar sesión.
+Laravel 13 usa `MAIL_SCHEME`; este proyecto no lee `MAIL_ENCRYPTION`.
+Para el puerto 587, `smtp` junto con `MAIL_REQUIRE_TLS=true` exige STARTTLS antes
+de autenticar. `smtps` corresponde a TLS implícito, normalmente en el puerto 465.
+No desactive la comprobación de certificados ni permita envío sin TLS.
+Si configura `MAIL_URL`, sus componentes pueden sobrescribir `MAIL_*`; deje esa
+variable sin definir para esta configuración individual.
 
-## Si Gmail rechaza la autenticación
+Después de editar el entorno, ejecute desde `frontend_clinica`:
 
-- Compruebe que se usó la contraseña de aplicación, no la contraseña normal.
-- Verifique que la autenticación en dos pasos continúa activa.
-- Si cambió la contraseña principal de Google, genere una nueva contraseña de
-  aplicación: Google revoca las anteriores después de ese cambio.
-- Confirme que `QUARKUS_MAILER_MOCK=false`, el puerto es `587` y STARTTLS es `REQUIRED`.
-- Revise si la cuenta pertenece a una organización que bloquea contraseñas de aplicación.
-- No habilite `trust-all` ni desactive la validación TLS para sortear errores de certificado.
+```sh
+php artisan config:clear
+```
 
-Si el envío falla, Quarkus responde con un error controlado y Laravel no presenta el
-mensaje como entregado. El contenido del correo y el OTP no deben registrarse en logs.
+Reinicie el servidor Laravel si mantiene configuración en memoria. No cambie las
+variables PostgreSQL ni Google OAuth para configurar SMTP.
+
+## Flujo y controles conservados
+
+- El registro valida datos y comprueba que exista un transporte de entrega.
+- PostgreSQL genera seis dígitos con aleatoriedad criptográfica y guarda su hash SHA-256.
+- Laravel envía `VerificationCodeMail` a la dirección del paciente registrado.
+- El código vence a los cinco minutos, admite tres intentos y se consume al acertar
+  o al agotar los intentos. El login permanece bloqueado hasta verificar el correo.
+- El reenvío espera 60 segundos y permite como máximo cinco solicitudes por hora.
+  Un código nuevo invalida los anteriores.
+- La continuación de verificación dura 30 minutos y se conserva cifrada.
+- Los fallos SMTP devuelven un mensaje controlado. El registro nuevo se revierte
+  si el envío falla. Los fallos de reenvío conservan el OTP anterior mediante rollback.
+- Los códigos y contraseñas no se registran. El diagnóstico de envío registra
+  únicamente la clase de excepción, sin destinatarios ni conversaciones SMTP.
+- Los transportes `log`, los fallbacks a `log` y `array` fuera de pruebas se rechazan.
+
+## Verificación real pendiente
+
+Se comprobó conexión real a `smtp.gmail.com:587`: saludo 220, STARTTLS anunciado,
+certificado TLS validado y respuesta 250 después de negociar TLS. Esto no comprueba
+autenticación ni entrega: faltan el remitente y una contraseña de aplicación nueva.
+
+Después de configurarlos, registre un paciente de prueba con una dirección que
+pueda consultar. Revise entrada y spam, introduzca el código en `/verificar-correo`
+y compruebe el acceso mediante contraseña después de la verificación. Pruebe otra
+dirección, un reenvío tras 60 segundos y el rechazo de un código ya utilizado.
+La aceptación SMTP no garantiza llegada a la bandeja: confirme la recepción.
+
+## Referencias
+
+- https://laravel.com/framework/docs/13.x/mail
+- https://symfony.com/doc/current/mailer.html
+- https://developers.google.com/workspace/gmail/imap/imap-smtp
+- https://support.google.com/accounts/answer/185833

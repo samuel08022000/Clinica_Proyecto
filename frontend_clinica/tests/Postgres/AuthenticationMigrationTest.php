@@ -15,10 +15,12 @@ use Illuminate\Cache\RateLimiter;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use PDO;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
 final class AuthenticationMigrationTest extends TestCase
@@ -188,6 +190,67 @@ final class AuthenticationMigrationTest extends TestCase
     }
 
     #[Test]
+    public function traditional_registration_verifies_the_delivered_code_before_allowing_login(): void
+    {
+        $data = $this->registrationData();
+        $this->post('/registro', $data + ['password_confirmation' => $data['password']])
+            ->assertRedirect('/verificar-correo')->assertSessionHas('registration_verification_token');
+        $mail = $this->lastOtpMail();
+        $this->assertTrue($mail->hasTo($data['email']));
+        $this->post('/login', ['email' => $data['email'], 'password' => $data['password']])
+            ->assertRedirect('/verificar-correo');
+        $this->post('/verificar-correo', ['code' => $mail->code])->assertRedirect('/login')
+            ->assertSessionMissing('registration_verification_token');
+        $this->post('/login', ['email' => $data['email'], 'password' => $data['password']])
+            ->assertRedirect('/paciente/inicio')->assertSessionHas('cod_rol', 'ROL001');
+    }
+
+    #[Test]
+    public function otp_hash_expiration_resend_and_hourly_limits_are_preserved(): void
+    {
+        $data = $this->registrationData();
+        $verification = app(PatientRegistrationService::class)->register($data);
+        $firstCode = $this->lastOtpMail()->code;
+        $userId = $verification['userId'];
+        $storedHash = $this->scalar("SELECT encode(codigo_hash,'hex') FROM verificaciones_otp WHERE cod_usu=".$this->quote($userId));
+        $this->assertSame(hash('sha256', $firstCode), $storedHash);
+        $this->owner->prepare("UPDATE verificaciones_otp SET expira_en=now()-interval '1 second' WHERE cod_usu=?")->execute([$userId]);
+        $otp = app(OtpService::class);
+        try {
+            $otp->verify($verification['verificationToken'], $firstCode);
+            $this->fail('OTP expirado aceptado.');
+        } catch (AuthDomainException $error) {
+            $this->assertSame('OTP_INVALID_OR_EXPIRED', $error->errorCode);
+        }
+        for ($resend = 0; $resend < 4; $resend++) {
+            $this->owner->prepare("UPDATE verificaciones_otp SET creado_en=now()-interval '61 seconds' WHERE cod_usu=? AND consumido_en IS NULL")->execute([$userId]);
+            $otp->resend($verification['verificationToken']);
+        }
+        Mail::assertSent(VerificationCodeMail::class, 5);
+        $this->assertSame(1, (int) $this->scalar('SELECT count(*) FROM verificaciones_otp WHERE consumido_en IS NULL AND cod_usu='.$this->quote($userId)));
+        $this->owner->prepare("UPDATE verificaciones_otp SET creado_en=now()-interval '61 seconds' WHERE cod_usu=? AND consumido_en IS NULL")->execute([$userId]);
+        try {
+            $otp->resend($verification['verificationToken']);
+            $this->fail('Límite horario OTP omitido.');
+        } catch (AuthDomainException $error) {
+            $this->assertSame('OTP_HOURLY_LIMIT_REACHED', $error->errorCode);
+        }
+        $this->assertTrue($otp->verify($verification['verificationToken'], $this->lastOtpMail()->code));
+    }
+
+    #[Test]
+    public function smtp_failure_rolls_back_the_new_patient_and_returns_a_safe_registration_error(): void
+    {
+        $data = $this->registrationData();
+        Log::spy();
+        Mail::shouldReceive('to')->once()->with($data['email'])->andReturnSelf();
+        Mail::shouldReceive('send')->once()->andThrow(new TransportException('Test-only SMTP authentication failure'));
+        $this->from('/registro')->post('/registro', $data + ['password_confirmation' => $data['password']])
+            ->assertRedirect('/registro')->assertSessionHasErrors(['registration' => 'No fue posible enviar el código de verificación. Intenta nuevamente más tarde.']);
+        $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM usuarios WHERE email='.$this->quote($data['email'])));
+    }
+
+    #[Test]
     public function recovery_is_neutral_single_use_updates_bcrypt_audits_and_revokes_sessions(): void
     {
         $user = $this->user('ROL001');
@@ -237,28 +300,40 @@ final class AuthenticationMigrationTest extends TestCase
         $fake = new FakeGoogleIdentityProvider;
         $this->app->instance(GoogleIdentityProvider::class, $fake);
         $start = $this->get('/auth/google')->assertRedirect();
-        $flow = session('google_oauth_flow');
+        $flow = collect(session('google_oauth_flows'))->last();
         $this->get('/auth/google/callback?state=incorrecto&code=x')->assertRedirect('/login')->assertSessionHasErrors('authentication');
         $this->assertSame(0, $fake->exchanges);
 
         foreach (['nonce', 'expired', 'signature', 'audience'] as $mode) {
             $fake->mode = $mode;
             $this->get('/auth/google');
-            $flow = session('google_oauth_flow');
+            $flow = collect(session('google_oauth_flows'))->last();
             $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=x')->assertRedirect('/login')->assertSessionHasErrors('authentication');
         }
 
         $fake->mode = 'valid';
-        $fake->identity = ['subject' => $this->unique(), 'email' => $this->unique().'@example.invalid',
+        $fake->identity = ['subject' => $this->unique(), 'email' => strtolower($this->unique()).'@example.invalid',
             'name' => 'Paciente Google Seguro', 'emailVerified' => true];
         $this->get('/auth/google');
-        $flow = session('google_oauth_flow');
+        $flow = collect(session('google_oauth_flows'))->last();
         $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=ok')->assertRedirect('/registro/google/completar');
         $token = session('google_registration_token');
+        $this->get('/registro/google/completar')->assertOk()
+            ->assertSee('Completa tu perfil de paciente')
+            ->assertSee('action="'.route('google.registration.store').'"', false)
+            ->assertSee('name="ci"', false)
+            ->assertSee('name="_token"', false)
+            ->assertDontSee($token);
         $this->post('/registro/google/completar', ['ci' => $this->unique(), 'fecha_nacimiento' => '1990-01-01',
             'telefono' => '70000000', 'ciudad_residencia' => 'La Paz'])->assertRedirect('/paciente/inicio');
         $googleUser = $this->scalar('SELECT cod_usu FROM usuarios WHERE email='.$this->quote($fake->identity['email']));
-        $this->assertFalse($this->scalar('SELECT password_hash FROM usuarios WHERE cod_usu='.$this->quote($googleUser)));
+        $this->assertNull($this->scalar('SELECT password_hash FROM usuarios WHERE cod_usu='.$this->quote($googleUser)));
+        $this->post('/logout');
+        $this->get('/auth/google');
+        $loginFlow = collect(session('google_oauth_flows'))->last();
+        $this->get('/auth/google/callback?state='.urlencode($loginFlow['state']).'&code=ok')
+            ->assertRedirect('/paciente/inicio')->assertSessionHas('auth_authority', 'laravel')
+            ->assertSessionHas('cod_usu', $googleUser)->assertSessionHas('cod_rol', 'ROL001');
         $this->post('/logout');
         $this->post('/login', ['email' => $fake->identity['email'], 'password' => 'Cualquier123'])->assertSessionHasErrors('authentication');
         $this->withSession(['google_registration_token' => $token])->post('/registro/google/completar', [
@@ -270,6 +345,95 @@ final class AuthenticationMigrationTest extends TestCase
             'email' => $fake->identity['email'], 'name' => 'Otra Identidad', 'emailVerified' => true], 600);
         $this->expectException(AuthDomainException::class);
         app(GoogleAuthService::class)->linkAuthenticated($other['id'], $link);
+    }
+
+    #[Test]
+    public function google_links_an_existing_patient_after_password_confirmation_and_reuses_the_same_account(): void
+    {
+        $patient = $this->user('ROL001');
+        $fake = new FakeGoogleIdentityProvider;
+        $fake->identity = ['subject' => $this->unique(), 'email' => $patient['email'],
+            'name' => 'Paciente Existente', 'emailVerified' => true];
+        $this->app->instance(GoogleIdentityProvider::class, $fake);
+        $this->get('/auth/google');
+        $flow = collect(session('google_oauth_flows'))->last();
+        $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=ok')
+            ->assertRedirect('/login')->assertSessionHas('google_link_token');
+        $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM usuarios_identidades_externas WHERE cod_usu='.$this->quote($patient['id'])));
+        $this->post('/login', ['email' => $patient['email'], 'password' => $patient['password']])
+            ->assertRedirect('/paciente/inicio')->assertSessionHas('cod_usu', $patient['id']);
+        $this->assertSame(1, (int) $this->scalar('SELECT count(*) FROM usuarios_identidades_externas WHERE cod_usu='.$this->quote($patient['id'])));
+        $this->post('/logout');
+        $this->get('/auth/google');
+        $flow = collect(session('google_oauth_flows'))->last();
+        $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=ok')
+            ->assertRedirect('/paciente/inicio')->assertSessionHas('auth_authority', 'laravel')->assertSessionHas('cod_usu', $patient['id']);
+        $this->assertSame(1, (int) $this->scalar('SELECT count(*) FROM usuarios WHERE email='.$this->quote($patient['email'])));
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function google_link_conflict_preserves_the_existing_identity_and_the_password_login_session(): void
+    {
+        $patient = $this->user('ROL001');
+        $oldSubject = $this->unique();
+        $this->owner->prepare("INSERT INTO usuarios_identidades_externas(cod_usu,proveedor,identificador_externo,email_proveedor,email_verificado) VALUES (?,'google',?,?,true)")
+            ->execute([$patient['id'], $oldSubject, $patient['email']]);
+        $fake = new FakeGoogleIdentityProvider;
+        $fake->identity = ['subject' => $this->unique(), 'email' => $patient['email'],
+            'name' => 'Paciente Existente', 'emailVerified' => true];
+        $this->app->instance(GoogleIdentityProvider::class, $fake);
+        $this->get('/auth/google');
+        $flow = collect(session('google_oauth_flows'))->last();
+        $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=ok')->assertRedirect('/login');
+        $this->post('/login', ['email' => $patient['email'], 'password' => $patient['password']])
+            ->assertRedirect('/paciente/inicio')->assertSessionHas('warning')->assertSessionHas('cod_usu', $patient['id']);
+        $this->assertSame($oldSubject, $this->scalar('SELECT identificador_externo FROM usuarios_identidades_externas WHERE cod_usu='.$this->quote($patient['id'])));
+        Http::assertNothingSent();
+    }
+
+    #[Test]
+    public function google_identity_linked_to_another_patient_cannot_be_reassigned(): void
+    {
+        $owner = $this->user('ROL001');
+        $other = $this->user('ROL001');
+        $subject = $this->unique();
+        $this->owner->prepare("INSERT INTO usuarios_identidades_externas(cod_usu,proveedor,identificador_externo,email_proveedor,email_verificado) VALUES (?,'google',?,?,true)")
+            ->execute([$owner['id'], $subject, $owner['email']]);
+        $token = app(ChallengeStore::class)->issue('google-link', null, ['subject' => $subject,
+            'email' => $other['email'], 'name' => 'Paciente Prueba', 'emailVerified' => true], 600);
+        try {
+            app(GoogleAuthService::class)->linkAuthenticated($other['id'], $token);
+            $this->fail('Se reasignó una identidad de otro paciente.');
+        } catch (AuthDomainException $error) {
+            $this->assertSame('GOOGLE_IDENTITY_ALREADY_LINKED', $error->errorCode);
+        }
+        $this->assertSame($owner['id'], $this->scalar('SELECT cod_usu FROM usuarios_identidades_externas WHERE identificador_externo='.$this->quote($subject)));
+        $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM usuarios_identidades_externas WHERE cod_usu='.$this->quote($other['id'])));
+    }
+
+    #[Test]
+    public function google_duplicate_document_rolls_back_the_account_and_allows_correcting_the_form(): void
+    {
+        $existing = $this->user('ROL001');
+        $document = $this->scalar('SELECT ci FROM pacientes WHERE cod_usu='.$this->quote($existing['id']));
+        $fake = new FakeGoogleIdentityProvider;
+        $fake->identity = ['subject' => $this->unique(), 'email' => strtolower($this->unique()).'@example.invalid',
+            'name' => 'Paciente Nuevo Google', 'emailVerified' => true];
+        $this->app->instance(GoogleIdentityProvider::class, $fake);
+        $this->get('/registro/google');
+        $flow = collect(session('google_oauth_flows'))->last();
+        $this->get('/auth/google/callback?state='.urlencode($flow['state']).'&code=ok')->assertRedirect('/registro/google/completar');
+        $token = session('google_registration_token');
+        $details = ['ci' => $document, 'fecha_nacimiento' => '1990-01-01', 'telefono' => '70000000', 'ciudad_residencia' => 'La Paz'];
+        $this->from('/registro/google/completar')->post('/registro/google/completar', $details)
+            ->assertRedirect('/registro/google/completar')->assertSessionHasErrors('registration')
+            ->assertSessionHas('google_registration_token', $token);
+        $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM usuarios WHERE email='.$this->quote($fake->identity['email'])));
+        $this->assertNotNull(app(ChallengeStore::class)->read($token, 'google-register'));
+        $details['ci'] = $this->unique();
+        $this->post('/registro/google/completar', $details)->assertRedirect('/paciente/inicio')->assertSessionMissing('google_registration_token');
+        Http::assertNothingSent();
     }
 
     #[Test]

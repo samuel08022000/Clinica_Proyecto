@@ -92,8 +92,12 @@ final class OtpService
         }
         $challenge = $this->requireChallenge($token);
         // El resultado falso sale de la transacción antes de lanzar el error: así persiste el contador SQL.
-        $verified = $this->database->connection('clinical')->transaction(
-            fn ($db) => (bool) $db->scalar('SELECT public.validar_otp_email(?, ?)', [$challenge->userId, $code]), 1);
+        try {
+            $verified = $this->database->connection('clinical')->transaction(
+                fn ($db) => (bool) $db->scalar('SELECT public.validar_otp_email(?, ?)', [$challenge->userId, $code]), 1);
+        } catch (QueryException $error) {
+            throw $this->translate($error);
+        }
         if (! $verified) {
             throw new AuthDomainException('OTP_INVALID_OR_EXPIRED', 422, 'El código no es válido, expiró o alcanzó el límite de intentos.');
         }
