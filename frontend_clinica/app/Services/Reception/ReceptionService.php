@@ -241,7 +241,7 @@ class ReceptionService
 
     private function attendance(string $code): array
     {
-        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",u.nombre_completo AS "nombrePaciente",c.fecha,c.estado,c.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu WHERE c.cod_cit=?', [$code]);
+        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",c.cod_pac AS "codPac",u.nombre_completo AS "nombrePaciente",c.fecha,c.estado,c.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu WHERE c.cod_cit=?', [$code]);
         if (! $row) {
             self::missing('La cita solicitada no existe.');
         }
@@ -280,14 +280,27 @@ class ReceptionService
         $token = $this->qrToken($rawToken);
         $row = $this->db()->selectOne(
             'SELECT c.cod_cit AS "codCit", c.cod_pac AS "codPac", u.nombre_completo AS "nombrePaciente",
-                c.fecha, c.hora_inicio AS "horaInicio", c.estado
+                c.fecha, c.hora_inicio AS "horaInicio", c.estado,
+                (c.fecha=fecha_clinica()) AS "esHoy", cita_admite_checkin(c.cod_cit) AS "admiteCheckin"
              FROM verificar_token_qr(?) q JOIN citas c ON c.cod_cit=q.cod_cit AND c.token_qr=?
              JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu
-             WHERE c.fecha=fecha_clinica() AND c.estado=\'Confirmada\' AND cita_admite_checkin(c.cod_cit)',
+             WHERE q.fecha=c.fecha',
             [$token, $token],
         );
         if (! $row) {
-            throw new ClinicalOperationException(409, 'El QR no corresponde a una cita del día que admita llegada.', 'QR_INVALIDO');
+            throw new ClinicalOperationException(400, 'El QR es inválido o fue reemplazado. Presenta el pase vigente.', 'QR_INVALIDO');
+        }
+        if ($row->estado === 'En Espera') {
+            throw new ClinicalOperationException(409, 'La llegada de este paciente ya está registrada. Su cita está En Espera.', 'CHECKIN_DUPLICADO');
+        }
+        if ($row->estado !== 'Confirmada') {
+            throw new ClinicalOperationException(409, 'Esta cita está '.$row->estado.' y no admite registro de llegada.', 'ESTADO_INCOMPATIBLE');
+        }
+        if (! $row->esHoy) {
+            throw new ClinicalOperationException(409, 'Esta cita corresponde al '.$row->fecha.'. Solo se registra llegada el día de la cita.', 'QR_OTRA_FECHA');
+        }
+        if (! $row->admiteCheckin) {
+            throw new ClinicalOperationException(409, 'La cita no admite llegada: revisa los bloqueos de agenda y su acreditación.', 'CHECKIN_NO_DISPONIBLE');
         }
 
         return (array) $row;
@@ -299,8 +312,8 @@ class ReceptionService
         $user = $this->roles->require('ROL002');
         $code = $this->transactions->run(function (Connection $db) use ($token, $user, $expectedCode) {
             $secretary = $this->assertSecretary($db, $user->cod_usu);
+            $preview = $this->previewCheckin($token);
             if ($expectedCode !== null) {
-                $preview = $this->previewCheckin($token);
                 if ($preview['codCit'] !== $expectedCode) {
                     throw new ClinicalOperationException(409, 'El QR cambió. Valida nuevamente la identidad del paciente.', 'QR_INVALIDO');
                 }

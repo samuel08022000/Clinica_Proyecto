@@ -9,7 +9,9 @@ $baselineSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clini
 $upgradeSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V11__permisos_notificaciones.sql') -Raw -Encoding UTF8
 foreach ($functionName in @('tomar_notificaciones', 'procesar_evento_cita', 'reprogramar_cita')) {
     $originalSql = if ($functionName -eq 'reprogramar_cita') { Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/migration/V10__derivaciones_recepcion_enlazadas.sql') -Raw -Encoding UTF8 } else { $baselineSql }
-    $knownHashes = foreach ($sourceSql in @($originalSql, $upgradeSql)) {
+    $knownSources = @($originalSql, $upgradeSql)
+    if ($functionName -eq 'procesar_evento_cita') { $knownSources += Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V13__avisar_llegada_en_espera.sql') -Raw -Encoding UTF8 }
+    $knownHashes = foreach ($sourceSql in $knownSources) {
         $body = [regex]::Match($sourceSql, "CREATE OR REPLACE FUNCTION public\.$functionName\(.*?AS \`$\`$(.*?)\`$\`$;", 'Singleline').Groups[1].Value.Replace("`r`n", "`n")
         if (!$body) { throw 'No se pudo verificar la definición SQL versionada.' }
         [Convert]::ToHexString([Security.Cryptography.MD5]::HashData([Text.Encoding]::UTF8.GetBytes($body))).ToLowerInvariant()
@@ -22,4 +24,7 @@ $migrationSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot "database_clin
 $null = Invoke-ClinicalSql $migrationSql $targetDatabase
 $immediateFile = if ($Rollback) { 'U12__envio_inmediato_qr.sql' } else { 'V12__envio_inmediato_qr.sql' }
 $null = Invoke-ClinicalSql (Get-Content -LiteralPath (Join-Path $ClinicalRoot "database_clinica/upgrade/$immediateFile") -Raw -Encoding UTF8) $targetDatabase
+if (!$Rollback) {
+    $null = Invoke-ClinicalSql (Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V13__avisar_llegada_en_espera.sql') -Raw -Encoding UTF8) $targetDatabase
+}
 Write-Output "${targetDatabase}: migración de notificaciones y derivaciones $(if ($Rollback) {'revertida'} else {'aplicada'}); historiales conservados."

@@ -37,6 +37,7 @@ class SecretariaPanelTest extends TestCase
         $this->withoutVite();
         $notifications = $this->partialMock(AppointmentNotificationService::class);
         $notifications->shouldReceive('sendConfirmation')->byDefault()->andReturn('Pendiente');
+        $notifications->shouldReceive('sendCheckinNotification')->byDefault()->andReturn('Enviada');
 
         $accounts = Mockery::mock(AccountStatusService::class);
         $accounts->shouldReceive('requireActive')->andReturnUsing(function (string $userId): object {
@@ -435,7 +436,8 @@ class SecretariaPanelTest extends TestCase
         ClinicalVisualSnapshots::save('checkin', $this->secretary()->get('/secretaria/checkin')->getContent());
         $this->secretary()->get('/secretaria/checkin')->assertOk()
             ->assertSee('Activar cámara')->assertSee('Detener cámara')
-            ->assertSee('data-qr-video', false)->assertSee('data-preview-url', false);
+            ->assertSee('data-qr-video', false)->assertSee('qr-camera__frame', false)
+            ->assertSee('data-qr-indicator', false)->assertDontSee('data-preview-url', false);
         $this->override = fn ($method, $path) => str_ends_with($path, '/checkin/validar')
             ? ['codCit' => 'CIT00000001', 'codPac' => 'PAC000001', 'nombrePaciente' => 'Paciente de prueba', 'fecha' => '2026-11-12', 'horaInicio' => '09:00', 'estado' => 'Confirmada'] : null;
         $this->postJson('/secretaria/checkin/validar', ['tokenQr' => 'token-privado'])
@@ -450,6 +452,22 @@ class SecretariaPanelTest extends TestCase
         $this->secretary()->get('/secretaria/citas/CIT00000001/reprogramar?fecha=2026-11-13')
             ->assertOk()->assertSee('Confirmar reprogramación')->assertSee('name="codSlot"', false);
         ClinicalVisualSnapshots::save('reprogramar', $this->get('/secretaria/citas/CIT00000001/reprogramar?fecha=2026-11-13')->getContent());
+    }
+
+    public function test_automatic_checkin_returns_arrival_and_state_without_redirecting_or_echoing_the_token(): void
+    {
+        $this->secretary()->postJson('/secretaria/checkin', ['tokenQr' => 'qr-authorized-secret'])
+            ->assertOk()->assertJsonPath('estado', 'En Espera')
+            ->assertJsonPath('codCit', 'CIT00000001')->assertJsonPath('checkinRegistrado', true)
+            ->assertJsonPath('horaLlegadaCheckin', '2026-11-12T09:00:00-04:00')->assertDontSee('qr-authorized-secret');
+        $this->assertStringNotContainsString('qr-authorized-secret', json_encode(session()->all()));
+    }
+
+    public function test_automatic_checkin_explains_why_a_future_appointment_is_rejected(): void
+    {
+        $this->override = fn () => throw new ClinicalOperationException(409, 'Esta cita corresponde al 2026-11-24. Solo se registra llegada el día de la cita.', 'QR_OTRA_FECHA');
+        $this->secretary()->postJson('/secretaria/checkin', ['tokenQr' => 'token-futuro'])
+            ->assertStatus(409)->assertJsonPath('error', 'QR_OTRA_FECHA')->assertSee('2026-11-24')->assertDontSee('token-futuro');
     }
 
     public function test_checkin_sends_token_only_in_post_body_then_redirects_without_it(): void

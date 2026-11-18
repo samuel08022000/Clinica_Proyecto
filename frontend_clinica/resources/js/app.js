@@ -1,6 +1,7 @@
 import './administracion';
 import './secretaria';
 import './qr-checkin';
+import './clinical-live';
 import './medico';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');

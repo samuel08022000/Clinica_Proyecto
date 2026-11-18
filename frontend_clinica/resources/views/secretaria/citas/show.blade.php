@@ -4,6 +4,7 @@
     <a href="{{ route('secretaria.citas.index') }}">Gestión de citas</a><span aria-hidden="true">/</span>{{ $appointment['codCit'] }}
 @endsection
 @section('reception_content')
+    <div data-clinical-live-content>
     <x-admin.heading :title="$appointment['codCit']" description="Información administrativa de la cita." />
     <section class="a-panel"><h2>Detalle de la reserva</h2><x-appointment-summary :appointment="$appointment" /></section>
     <x-clinical-progress :state="$appointment['estado']" />
@@ -32,4 +33,5 @@
             @if($canMarkAbsence)<x-admin.button variant="secondary" :href="route('secretaria.citas.inasistencia', $appointment['codCit'])">Registrar inasistencia</x-admin.button>@else<p class="a-help">La inasistencia requiere una cita confirmada, finalizada y sin check-in.</p>@endif
         </div>
     </section>
+    </div>
 @endsection

@@ -8,6 +8,21 @@ use Tests\TestCase;
 
 class AppointmentNotificationTransportTest extends TestCase
 {
+    public function test_qr_renderer_produces_a_png_for_the_camera_scanner(): void
+    {
+        $fixtureToken = base64_encode('CIT99999999|2026-11-17|'.str_repeat('a', 32)).'.'.str_repeat('b', 64);
+        $png = app(AppointmentNotificationService::class)->qrPng($fixtureToken);
+        $info = getimagesizefromstring($png);
+        $this->assertSame('image/png', $info['mime']);
+        $this->assertGreaterThanOrEqual(300, $info[0]);
+        if ($directory = getenv('CLINICAL_VISUAL_DIR')) {
+            if (! is_dir($directory)) {
+                mkdir($directory, 0777, true);
+            }
+            file_put_contents($directory.'/camera-fixture.png', $png);
+        }
+    }
+
     public function test_log_transport_cannot_be_reported_as_email_delivery(): void
     {
         config(['mail.default' => 'log']);

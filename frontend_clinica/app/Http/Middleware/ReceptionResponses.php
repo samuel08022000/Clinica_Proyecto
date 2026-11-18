@@ -13,7 +13,8 @@ class ReceptionResponses
     {
         $response = $next($request);
         if ($response->getStatusCode() === 503 && ! $response->isRedirection()) {
-            $response = self::error(503, 'No fue posible validar la sesión o consultar el servicio. Tu sesión se conserva. Reintenta en unos momentos.');
+            $message = 'No fue posible validar la sesión o consultar el servicio. Tu sesión se conserva. Reintenta en unos momentos.';
+            $response = $request->expectsJson() ? response()->json(['message' => $message], 503) : self::error(503, $message);
         }
 
         return self::privateResponse($response);

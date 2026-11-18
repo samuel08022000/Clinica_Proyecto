@@ -45,7 +45,12 @@
                 @endif
             @endisset
 
-            @yield('panel')
+            @if(request()->routeIs('paciente.home', 'paciente.citas', 'paciente.citas.show', 'paciente.notificaciones'))
+                <p class="a-help" role="status" data-clinical-live-status hidden></p>
+                <div data-clinical-live-content>@yield('panel')</div>
+            @else
+                @yield('panel')
+            @endif
         </main>
     </div>
 @endsection

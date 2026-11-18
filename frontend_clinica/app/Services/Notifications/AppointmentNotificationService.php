@@ -61,6 +61,16 @@ class AppointmentNotificationService
     /** Envía únicamente la confirmación existente de una operación ya confirmada. */
     public function sendConfirmation(string $code): string
     {
+        return $this->sendAppointmentNotice($code, 'Confirmacion');
+    }
+
+    public function sendCheckinNotification(string $code): string
+    {
+        return $this->sendAppointmentNotice($code, 'Cita_En_Espera');
+    }
+
+    private function sendAppointmentNotice(string $code, string $type): string
+    {
         try {
             $db = $this->db();
             if ($db->transactionLevel() !== 0) {
@@ -72,20 +82,20 @@ class AppointmentNotificationService
                     en_proceso_desde=now(), ultimo_error=NULL
                  WHERE n.cod_not=(
                     SELECT candidate.cod_not FROM notificaciones candidate
-                    WHERE candidate.cod_cit=? AND candidate.canal='Email' AND candidate.tipo_alerta='Confirmacion'
+                    WHERE candidate.cod_cit=? AND candidate.canal='Email' AND candidate.tipo_alerta=?
                       AND candidate.estado='Pendiente' AND candidate.intentos<candidate.max_intentos
                       AND candidate.fecha_programada<=now()
                     ORDER BY candidate.cod_not DESC LIMIT 1 FOR UPDATE SKIP LOCKED
                  )
                  RETURNING n.cod_not AS id_notificacion,n.cod_usu AS usuario,n.cod_cit AS cita,
                     n.canal AS canal_salida,n.tipo_alerta AS tipo,n.destinatario AS destino,
-                    n.mensaje,n.intentos AS numero_intento", [$code],
+                    n.mensaje,n.intentos AS numero_intento", [$code, $type],
             );
             if ($notice !== null) {
                 $this->processNotice($notice);
             }
 
-            return $this->confirmationStatus($code)['correoEstado'] ?? 'NoDisponible';
+            return $this->noticeStatus($code, $type)['correoEstado'] ?? 'NoDisponible';
         } catch (Throwable $error) {
             Log::warning('No se pudo procesar la confirmación QR.', ['cita' => $code, 'tipo' => $error::class]);
 
@@ -96,6 +106,11 @@ class AppointmentNotificationService
     /** Consulta operativa sin exponer destinatarios, tokens ni credenciales. */
     public function confirmationStatus(string $code): array
     {
+        return $this->noticeStatus($code, 'Confirmacion');
+    }
+
+    private function noticeStatus(string $code, string $type): array
+    {
         return (array) ($this->db()->selectOne(
             "SELECT c.cod_cit AS \"codCit\", c.estado, c.fecha, p.email_verificado AS \"correoVerificado\",
                 n.estado AS \"correoEstado\", n.intentos, n.enviado_en AS \"enviadoEn\",
@@ -103,8 +118,8 @@ class AppointmentNotificationService
                      WHEN n.ultimo_error LIKE 'SMTP_CONNECTION:%' THEN 'SMTP_CONNECTION'
                      WHEN n.ultimo_error IS NOT NULL THEN 'MAIL_ERROR' ELSE NULL END AS \"errorCodigo\"
              FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
-             LEFT JOIN notificaciones n ON n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta='Confirmacion'
-             WHERE c.cod_cit=? ORDER BY n.cod_not DESC LIMIT 1", [$code],
+             LEFT JOIN notificaciones n ON n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta=?
+             WHERE c.cod_cit=? ORDER BY n.cod_not DESC LIMIT 1", [$type, $code],
         ) ?? []);
     }
 

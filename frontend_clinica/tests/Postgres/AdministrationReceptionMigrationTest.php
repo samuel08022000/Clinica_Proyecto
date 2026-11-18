@@ -502,6 +502,48 @@ final class AdministrationReceptionMigrationTest extends TestCase
         $this->assertSame(3, (int) $this->scalar('SELECT count(*) FROM citas WHERE cod_pac=?', [$patient]));
     }
 
+    #[Test]
+    public function automatic_scan_updates_secretary_patient_and_sends_one_arrival_notification(): void
+    {
+        [, $secretary, $patient, $specialty, $doctor] = $this->operationalFixture(today: true);
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $date = $this->owner->query('SELECT fecha_clinica()')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'codMed' => $doctor['codMed'], 'fecha' => $date]);
+        if ($slots === []) {
+            $this->markTestSkipped('Ya no hay un horario futuro del día para crear la cita sintética.');
+        }
+        $booked = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']]);
+        $code = $booked['codCit'];
+        $token = $this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$code]);
+        $result = $this->postJson('/secretaria/checkin', ['tokenQr' => 'https://clinic.test/pase-qr/'.rawurlencode($token)])
+            ->assertOk()->assertJsonPath('estado', 'En Espera')->assertJsonPath('codPac', $patient)
+            ->assertJsonPath('checkinRegistrado', true)->assertDontSee($token);
+        $arrival = $result->json('horaLlegadaCheckin');
+        $this->assertNotEmpty($arrival);
+        $this->assertSame('En Espera', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$code]));
+        $this->assertSame(2, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Cita_En_Espera'", [$code]));
+        $this->assertSame('Enviada', $this->scalar("SELECT estado FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Cita_En_Espera'", [$code]));
+        $this->postJson('/secretaria/checkin', ['tokenQr' => $token])->assertStatus(409)->assertJsonPath('error', 'CHECKIN_DUPLICADO');
+        $this->assertSame($arrival, $this->scalar('SELECT hora_llegada_checkin FROM citas WHERE cod_cit=?', [$code]));
+        $this->assertSame(2, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Cita_En_Espera'", [$code]));
+        $this->get('/secretaria/citas?codPac='.$patient)->assertOk()->assertSee($code)->assertSee('En Espera')->assertSee('data-clinical-live-content', false);
+        $this->login($this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]));
+        $this->get('/paciente/citas/'.$code)->assertOk()->assertViewHas('cita', fn ($cita) => $cita['estado'] === 'En Espera')->assertSee('data-clinical-live-content', false);
+        $this->get('/paciente/notificaciones')->assertOk()->assertSee('Registramos tu llegada')->assertSee($code);
+        $this->login($secretary['codUsu']);
+        $futureDate = $this->owner->query('SELECT fecha_clinica()+7')->fetchColumn();
+        $futureSlots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $futureDate]);
+        $future = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $futureSlots[0]['codSlot']]);
+        $futureToken = $this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$future['codCit']]);
+        $this->postJson('/secretaria/checkin', ['tokenQr' => $futureToken])->assertStatus(409)->assertJsonPath('error', 'QR_OTRA_FECHA')->assertSee($futureDate);
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$future['codCit']]));
+        $service->request('POST', 'citas/'.$future['codCit'].'/cancelar', ['motivo' => 'Llegada no autorizada de prueba']);
+        $this->postJson('/secretaria/checkin', ['tokenQr' => $futureToken])->assertStatus(409)->assertJsonPath('error', 'ESTADO_INCOMPATIBLE')->assertSee('Cancelada');
+        $this->postJson('/secretaria/checkin', ['tokenQr' => 'qr-falso'])->assertStatus(400)->assertJsonPath('error', 'QR_INVALIDO');
+        $this->assertSame(0, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Cita_En_Espera'", [$future['codCit']]));
+    }
+
     private function operationalFixture(bool $today = false): array
     {
         $admin = $this->identity('ROL004');
