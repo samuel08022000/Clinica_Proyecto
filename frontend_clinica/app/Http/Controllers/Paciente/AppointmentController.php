@@ -4,35 +4,28 @@ namespace App\Http\Controllers\Paciente;
 
 use App\Contracts\PatientAppointmentManager;
 use App\Contracts\PatientAvailabilityProvider;
-use App\Contracts\PatientProfileProvider;
 use App\Exceptions\ClinicalOperationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Paciente\BookingSearchRequest;
 use App\Http\Requests\Paciente\CancelAppointmentRequest;
 use App\Http\Requests\Paciente\RescheduleAppointmentRequest;
 use App\Http\Requests\Paciente\ReserveRequest;
-use App\Mail\AppointmentQrMail;
+use App\Services\Notifications\AppointmentNotificationService;
 use App\Support\PatientAppointmentPresentation;
 use Carbon\CarbonImmutable;
-use Endroid\QrCode\Builder\Builder;
-use Endroid\QrCode\Encoding\Encoding;
-use Endroid\QrCode\ErrorCorrectionLevel;
-use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
-use App\Services\Paciente\PatientAppointmentService;
 use Throwable;
 
 final class AppointmentController extends Controller
 {
     public function __construct(
-        private PatientAppointmentService $appointments,
+        private PatientAppointmentManager $appointments,
         private PatientAvailabilityProvider $availability,
-        private PatientProfileProvider $profiles,
+        private AppointmentNotificationService $notifications,
     ) {}
 
     public function index(Request $request): View
@@ -101,10 +94,8 @@ final class AppointmentController extends Controller
     {
         $appointment = $this->appointments->reserve($request->validated('codSlot'));
 
-        $this->sendAppointmentQrEmail($appointment['codCit']);
-
         return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue confirmada y enviamos tu pase QR a tu correo.');
+            ->with('success', 'Tu cita fue confirmada. El correo QR está pendiente de procesamiento; tu pase está disponible aquí.');
     }
 
     public function show(string $cita): View
@@ -115,10 +106,10 @@ final class AppointmentController extends Controller
         if (! empty($detail['puedeVerPaseQr'])) {
             try {
                 $pass = $this->appointments->checkInPass($cita);
-                $qrPng = $this->buildQrPng($pass['tokenQr']);
+                $qrPng = $this->notifications->qrPng($pass['tokenQr']);
                 $qrBase64 = base64_encode($qrPng);
             } catch (Throwable $e) {
-                Log::warning('No se pudo renderizar el QR en pantalla: ' . $e->getMessage());
+                Log::warning('No se pudo renderizar el QR de la cita.', ['cita' => $cita]);
             }
         }
 
@@ -179,46 +170,10 @@ final class AppointmentController extends Controller
             $validated['motivo'],
         );
 
-        $this->sendAppointmentQrEmail($appointment['codCit']);
-
         return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue reprogramada y enviamos tu nuevo pase QR a tu correo.');
+            ->with('success', 'Tu cita fue reprogramada. El nuevo pase está disponible aquí y su correo está pendiente de procesamiento.');
     }
 
-    private function sendAppointmentQrEmail(string $codCit): void
-    {
-        try {
-            $profile = $this->profiles->profile();
-            $pass = $this->appointments->checkInPass($codCit);
-            $pass['ci'] = $profile['ci'] ?? null;
-
-            $qrPng = $this->buildQrPng($pass['tokenQr']);
-
-            if (! empty($profile['email'])) {
-                Mail::to($profile['email'])->send(new AppointmentQrMail($pass, $qrPng));
-            }
-        } catch (Throwable $e) {
-            Log::error('Error enviando correo QR de cita ' . $codCit . ': ' . $e->getMessage());
-        }
-    }
-
- private function buildQrPng(string $tokenQr): string
-{
-    $qrUrl = rtrim((string) config('app.url'), '/') . '/pase-qr/' . rawurlencode($tokenQr);
-
-    $builder = new Builder(
-        writer: new PngWriter(),
-        writerOptions: [],
-        validateResult: false,
-        data: $qrUrl,
-        encoding: new Encoding('UTF-8'),
-        errorCorrectionLevel: ErrorCorrectionLevel::Medium,
-        size: 300,
-        margin: 10,
-    );
-
-    return $builder->build()->getString();
-}
     /** @return array<string, mixed> */
     private function bookingViewData(
         ?string $specialtyCode,

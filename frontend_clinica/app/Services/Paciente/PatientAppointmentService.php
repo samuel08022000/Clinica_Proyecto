@@ -25,6 +25,8 @@ final class PatientAppointmentService implements PatientAppointmentManager
                c.fecha_atencion AS "fechaAtencion",
                c.cod_cit_padre AS "codCitPadre",
                c.creado_en AS "creadoEn",
+               (SELECT n.estado FROM notificaciones n WHERE n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta='Confirmacion' ORDER BY n.cod_not DESC LIMIT 1) AS "correoEstado",
+               (SELECT n.intentos FROM notificaciones n WHERE n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta='Confirmacion' ORDER BY n.cod_not DESC LIMIT 1) AS "correoIntentos",
                (c.token_qr IS NOT NULL) AS "qrDisponible",
                ((c.fecha + c.hora_fin) <= ahora_clinica()) AS "esVencida"
         FROM citas c
@@ -80,14 +82,14 @@ final class PatientAppointmentService implements PatientAppointmentManager
             $bindings = [$patient['codPac']];
 
             if ($scope === 'proximas') {
-                $sql .= " AND h.estado IN ('Confirmada', 'En Espera') AND (h.fecha + h.hora_fin) > ahora_clinica()";
+                $sql .= " AND (h.estado='Afectada/Pendiente Reprogramación' OR (h.estado IN ('Confirmada', 'En Espera') AND (h.fecha + h.hora_fin) > ahora_clinica()))";
             } elseif ($scope === 'pasadas') {
-                $sql .= " AND (h.estado NOT IN ('Confirmada', 'En Espera') OR (h.fecha + h.hora_fin) <= ahora_clinica())";
+                $sql .= " AND h.estado<>'Afectada/Pendiente Reprogramación' AND (h.estado NOT IN ('Confirmada', 'En Espera') OR (h.fecha + h.hora_fin) <= ahora_clinica())";
             }
 
             if (filled($filters['estado'] ?? null)) {
                 $sql .= ' AND h.estado=?';
-                $bindings[] = PatientSupport::text($filters['estado'], 30, 'estado');
+                $bindings[] = PatientSupport::text($filters['estado'], 40, 'estado');
             }
             if ($from !== null) {
                 $sql .= ' AND h.fecha>=?';
@@ -259,7 +261,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
         $detail = (array) $row;
         $mutable = $detail['estado'] === 'Confirmada' && ! $detail['esVencida'];
         $detail['puedeCancelar'] = $mutable;
-        $detail['puedeReprogramar'] = $mutable && $patient['habilitadoParaReservar'];
+        $detail['puedeReprogramar'] = ($mutable || $detail['estado'] === 'Afectada/Pendiente Reprogramación') && $patient['habilitadoParaReservar'];
         $detail['puedeVerPaseQr'] = $mutable && (bool) $detail['qrDisponible'];
 
         return $detail;

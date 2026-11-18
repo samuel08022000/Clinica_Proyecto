@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Secretaria;
 
+use App\Exceptions\ClinicalOperationException;
 use App\Http\Requests\Secretaria\AppointmentActionRequest;
 use App\Http\Requests\Secretaria\AppointmentFiltersRequest;
 use App\Http\Requests\Secretaria\RescheduleRequest;
+use App\Http\Requests\Secretaria\ReservationBrowseRequest;
 use App\Support\AppointmentPresentation;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -55,6 +58,25 @@ class CitaController extends ReceptionController
         return redirect()->route('secretaria.citas.show', $result['codCit'])
             ->with('success', 'La cita fue reprogramada conservando su trazabilidad.')
             ->with('appointment_result', $result);
+    }
+
+    public function reschedule(ReservationBrowseRequest $request, string $cita): View
+    {
+        $appointment = $this->read('citas/'.$cita);
+        if (! in_array($appointment['estado'], ['Confirmada', 'Afectada/Pendiente Reprogramación'], true)) {
+            throw new ClinicalOperationException(409, 'La cita ya no admite reprogramación. Actualiza su detalle.', 'CONFLICTO');
+        }
+        $filters = $request->validated();
+        $doctors = $this->read('medicos', ['codEsp' => $appointment['codEsp']]);
+        $slots = isset($filters['fecha']) ? $this->read('disponibilidad', array_filter([
+            'codPac' => $appointment['codPac'], 'codEsp' => $appointment['codEsp'],
+            'codMed' => $filters['codMed'] ?? null, 'fecha' => $filters['fecha'],
+        ])) : [];
+        $today = CarbonImmutable::now('America/La_Paz');
+
+        return view('secretaria.citas.reprogramar', compact('appointment', 'doctors', 'slots', 'filters') + [
+            'today' => $today->toDateString(), 'lastDay' => $today->addDays(14)->toDateString(),
+        ]);
     }
 
     private function details(string $cita): array

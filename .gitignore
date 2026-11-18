@@ -11,6 +11,7 @@ boost.json
 
 # Estado privado, respaldos y credenciales del PostgreSQL Laravel aislado.
 /.local/clinical-phase1/
+/.local/clinical-audit/
 
 # Respaldos y exportaciones locales privadas
 .integration-backups/

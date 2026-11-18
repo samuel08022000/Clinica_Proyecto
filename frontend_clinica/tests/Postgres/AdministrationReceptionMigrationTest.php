@@ -5,11 +5,14 @@ namespace Tests\Postgres;
 use App\Exceptions\ClinicalOperationException;
 use App\Models\Usuario;
 use App\Services\Administration\AdministrationService;
+use App\Services\Notifications\AppointmentNotificationService;
 use App\Services\Reception\ReceptionService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use PDO;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -121,6 +124,15 @@ final class AdministrationReceptionMigrationTest extends TestCase
         }
         $appointment = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']]);
         $token = $this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$appointment['codCit']]);
+        $preview = $service->request('POST', 'checkin/validar', ['tokenQr' => 'https://clinica.test/pase-qr/'.rawurlencode($token)]);
+        $this->assertSame($appointment['codCit'], $preview['codCit']);
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$appointment['codCit']]));
+        try {
+            $service->request('POST', 'checkin', ['tokenQr' => $token, 'codCit' => 'CIT99999999']);
+            $this->fail('Se acreditó un paciente distinto del validado.');
+        } catch (ClinicalOperationException $error) {
+            $this->assertSame(409, $error->status);
+        }
         $attendance = $service->request('POST', 'checkin', ['tokenQr' => $token]);
         $this->assertSame('En Espera', $attendance['estado']);
         $this->assertSame($secretary['codUsu'], $attendance['checkinPorUsu']);
@@ -309,6 +321,157 @@ final class AdministrationReceptionMigrationTest extends TestCase
         $this->assertSame(21, (int) $db->scalar("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history'"));
     }
 
+    #[Test]
+    public function affected_appointment_is_resolved_across_secretary_patient_and_outbox(): void
+    {
+        [$admin, $secretary, $patient, $specialty, $doctor] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $date = $this->owner->query('SELECT fecha_clinica()+1')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $first = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']]);
+        $token = $this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$first['codCit']]);
+        $unaffected = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[3]['codSlot']]);
+        $patientUser = $this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]);
+        $this->login($patientUser);
+        $this->get('/paciente/citas/'.$first['codCit'])->assertOk()->assertSee('data:image/png;base64,', false)->assertSee('Pendiente de envío');
+        $this->get('/paciente/notificaciones')->assertOk()->assertSee($first['codCit']);
+        $otherPatientUser = $this->identity('ROL001');
+        $this->login($otherPatientUser);
+        $this->get('/paciente/notificaciones')->assertOk()->assertDontSee($first['codCit']);
+        $this->postJson('/paciente/citas/'.$first['codCit'].'/correo-qr')->assertStatus(409);
+        $this->login($admin);
+        $block = app(AdministrationService::class)->request('POST', 'administracion/medicos/'.$doctor['codMed'].'/bloqueos', [
+            'fechaBloqueo' => $date, 'horaInicio' => $slots[0]['horaInicio'], 'horaFin' => $slots[0]['horaFin'], 'motivo' => 'AUDIT_TEST bloqueo parcial',
+        ]);
+        $this->assertSame('Afectada/Pendiente Reprogramación', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$first['codCit']]));
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$unaffected['codCit']]));
+        $this->assertSame(1, (int) $this->scalar('SELECT count(*) FROM bloqueos_citas_afectadas WHERE cod_blo=?', [$block['codBlo']]));
+        $this->get('/pase-qr/'.rawurlencode($token))->assertNotFound();
+        $this->login($patientUser);
+        $this->get('/paciente/citas')->assertOk()->assertSee($first['codCit'])->assertSee('Requiere reprogramación');
+        $this->login($secretary['codUsu']);
+        $this->get('/secretaria/citas/'.$first['codCit'].'/reprogramar?fecha='.$date)->assertOk()->assertSee('Confirmar reprogramación');
+        $new = $service->request('POST', 'citas/'.$first['codCit'].'/reprogramar', ['codSlot' => $slots[1]['codSlot'], 'motivo' => 'AUDIT_TEST resolver bloqueo']);
+        $this->assertSame('Reprogramada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$first['codCit']]));
+        $this->assertSame($first['codCit'], $this->scalar('SELECT cod_cit_padre FROM citas WHERE cod_cit=?', [$new['codCit']]));
+        $this->assertNotSame($token, $this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$new['codCit']]));
+        try {
+            $service->request('POST', 'citas/'.$first['codCit'].'/reprogramar', ['codSlot' => $slots[2]['codSlot'], 'motivo' => 'AUDIT_TEST formulario obsoleto']);
+            $this->fail('Se permitió reprogramar una cita ya reemplazada.');
+        } catch (ClinicalOperationException $error) {
+            $this->assertSame(409, $error->status);
+        }
+        $this->login($patientUser);
+        $this->get('/paciente/citas/'.$new['codCit'])->assertOk()->assertSee('Pase QR de confirmación');
+        $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$new['codCit']]));
+    }
+
+    #[Test]
+    public function outbox_accepts_mail_once_and_suppresses_obsolete_reminders(): void
+    {
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $date = $this->owner->query('SELECT fecha_clinica()+8')->fetchColumn();
+        $service = app(ReceptionService::class);
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $first = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']]);
+        $mailState = fn () => $this->scalar("SELECT estado FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion' ORDER BY cod_not DESC LIMIT 1", [$first['codCit']]);
+        $worker = app(AppointmentNotificationService::class);
+        for ($i = 0; $i < 30 && $mailState() !== 'Enviada'; $i++) {
+            $worker->process(500);
+        }
+        $this->assertSame('Enviada', $mailState());
+        $this->assertSame(1, (int) $this->scalar("SELECT intentos FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$first['codCit']]));
+        $this->owner->prepare("UPDATE notificaciones SET estado='EnProceso', en_proceso_desde=now() WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h'")->execute([$first['codCit']]);
+        $service->request('POST', 'citas/'.$first['codCit'].'/cancelar', ['motivo' => 'AUDIT_TEST cancelación']);
+        $worker->process(500);
+        $this->assertSame(0, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND estado IN ('Pendiente','EnProceso','Enviada')", [$first['codCit']]));
+        $this->assertSame(1, (int) $this->scalar("SELECT intentos FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$first['codCit']]));
+    }
+
+    #[Test]
+    public function mixed_web_and_desk_reservations_have_only_one_winner(): void
+    {
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $patientUser = $this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]);
+        $otherUser = $this->identity('ROL001');
+        $otherPatient = $this->scalar('SELECT cod_pac FROM pacientes WHERE cod_usu=?', [$otherUser]);
+        $this->login($secretary['codUsu']);
+        $slots = app(ReceptionService::class)->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $this->owner->query('SELECT fecha_clinica()+1')->fetchColumn()]);
+        $processes = [];
+        foreach ([['ConcurrentPatientReserveWorker.php', $patient, $patientUser], ['ConcurrentReserveWorker.php', $otherPatient, $secretary['codUsu']]] as [$file, $pac, $actor]) {
+            $pipes = [];
+            $process = proc_open([PHP_BINARY, base_path('tests/Support/'.$file), $pac, $slots[0]['codSlot'], $actor], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes, base_path());
+            fclose($pipes[0]);
+            $processes[] = [$process, $pipes];
+        }
+        $results = [];
+        foreach ($processes as [$process, $pipes]) {
+            $results[] = json_decode(stream_get_contents($pipes[1]), true, flags: JSON_THROW_ON_ERROR);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $this->assertSame(0, proc_close($process));
+        }
+        $this->assertCount(1, array_filter($results, fn ($r) => $r['ok']));
+        $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM citas WHERE cod_slot=? AND estado='Confirmada'", [$slots[0]['codSlot']]));
+        $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM notificaciones n JOIN citas c ON c.cod_cit=n.cod_cit WHERE c.cod_slot=? AND n.canal='Email' AND n.tipo_alerta='Confirmacion'", [$slots[0]['codSlot']]));
+    }
+
+    #[Test]
+    public function failed_email_can_be_retried_without_rebooking_or_leaking_transport_secrets(): void
+    {
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $date = $this->owner->query('SELECT fecha_clinica()+1')->fetchColumn();
+        $service = app(ReceptionService::class);
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $booked = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']]);
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP password=secret-token-do-not-save'));
+        $worker = app(AppointmentNotificationService::class);
+        $attempts = fn () => (int) $this->scalar("SELECT intentos FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$booked['codCit']]);
+        for ($i = 0; $i < 30 && $attempts() === 0; $i++) {
+            $worker->process(500);
+        }
+        $this->assertSame(1, $attempts());
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$booked['codCit']]));
+        $this->assertStringNotContainsString('secret-token', $this->scalar("SELECT ultimo_error FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$booked['codCit']]));
+        $this->login($this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]));
+        $this->get('/paciente/citas/'.$booked['codCit'])->assertOk()->assertSee('Error recuperable')->assertSee('Pase QR de confirmación');
+        $this->post('/paciente/citas/'.$booked['codCit'].'/correo-qr')->assertRedirect('/paciente/citas/'.$booked['codCit']);
+        $this->assertSame(1, (int) $this->scalar('SELECT count(*) FROM citas WHERE cod_slot=?', [$slots[0]['codSlot']]));
+        $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$booked['codCit']]));
+    }
+
+    #[Test]
+    public function postgres_itself_rejects_dates_outside_the_booking_window(): void
+    {
+        [$admin, $secretary, $patient, $specialty, $doctor] = $this->operationalFixture();
+        $this->login($admin);
+        $weekday = (int) $this->owner->query('SELECT extract(isodow FROM fecha_clinica())')->fetchColumn();
+        app(AdministrationService::class)->request('POST', 'administracion/medicos/'.$doctor['codMed'].'/horarios', [
+            'diaSemana' => $weekday, 'horaInicio' => '22:00', 'horaFin' => '23:40',
+        ]);
+        $this->login($secretary['codUsu']);
+        $db = DB::connection('clinical');
+        $lastSlot = $this->scalar('SELECT cod_slot FROM slots_agenda WHERE cod_med=? AND fecha=fecha_clinica()+14 ORDER BY inicio_at LIMIT 1', [$doctor['codMed']]);
+        $this->assertNotFalse($lastSlot);
+        $this->assertSame('Confirmada', app(ReceptionService::class)->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $lastSlot])['estado']);
+        foreach ([-1, 15] as $offset) {
+            $slot = $this->scalar('INSERT INTO slots_agenda(cod_hor,cod_med,cod_esp,inicio_at,fin_at)
+                SELECT cod_hor,cod_med,cod_esp,fecha_clinica()+?::integer+hora_inicio,fecha_clinica()+?::integer+hora_fin FROM slots_agenda
+                WHERE cod_slot=? RETURNING cod_slot', [$offset, $offset, $lastSlot]);
+            try {
+                $db->selectOne("SELECT reservar_cita(?,?,?,'Ventanilla',NULL)", [$patient, $slot, $secretary['codUsu']]);
+                $this->fail('PostgreSQL aceptó una fecha fuera de la ventana.');
+            } catch (QueryException $error) {
+                $this->assertSame('P4000', $error->errorInfo[0]);
+            }
+            $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM citas WHERE cod_slot=?', [$slot]));
+        }
+        $this->assertSame($this->owner->query("SELECT (now() AT TIME ZONE 'America/La_Paz')::date")->fetchColumn(), $db->scalar('SELECT fecha_clinica()'));
+    }
+
     private function operationalFixture(bool $today = false): array
     {
         $admin = $this->identity('ROL004');
@@ -346,7 +509,10 @@ final class AdministrationReceptionMigrationTest extends TestCase
     private function login(string $user): void
     {
         Auth::guard('web')->logout();
-        Auth::guard('web')->login(Usuario::query()->findOrFail($user));
+        $record = Usuario::query()->findOrFail($user);
+        Auth::guard('web')->login($record);
+        $this->withSession(['auth_authority' => 'laravel', 'cod_usu' => $user, 'cod_rol' => $record->cod_rol,
+            'auth_expires_at' => now()->addHours(2)->toIso8601String(), 'nombre_usuario' => $record->nombre_completo]);
     }
 
     private function email(string $prefix): string

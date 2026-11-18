@@ -12,6 +12,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ClinicalVisualSnapshots;
 use Tests\Support\ReceptionFixtures as F;
 use Tests\TestCase;
 
@@ -424,6 +425,28 @@ class SecretariaPanelTest extends TestCase
         foreach (AppointmentPresentation::STATES as $state) {
             $response->assertSee($state);
         }
+    }
+
+    public function test_camera_controls_and_server_preview_are_available(): void
+    {
+        ClinicalVisualSnapshots::save('checkin', $this->secretary()->get('/secretaria/checkin')->getContent());
+        $this->secretary()->get('/secretaria/checkin')->assertOk()
+            ->assertSee('Activar cámara')->assertSee('Detener cámara')
+            ->assertSee('data-qr-video', false)->assertSee('data-preview-url', false);
+        $this->override = fn ($method, $path) => str_ends_with($path, '/checkin/validar')
+            ? ['codCit' => 'CIT00000001', 'codPac' => 'PAC000001', 'nombrePaciente' => 'Paciente de prueba', 'fecha' => '2026-11-12', 'horaInicio' => '09:00', 'estado' => 'Confirmada'] : null;
+        $this->postJson('/secretaria/checkin/validar', ['tokenQr' => 'token-privado'])
+            ->assertOk()->assertJsonPath('codCit', 'CIT00000001')->assertDontSee('token-privado');
+        $this->assertStringNotContainsString('token-privado', json_encode(session()->all()));
+    }
+
+    public function test_affected_appointment_has_an_operational_reschedule_screen(): void
+    {
+        $this->override = fn ($method, $path) => $method === 'GET' && $path === '/secretaria/citas/CIT00000001'
+            ? F::appointment(['estado' => 'Afectada/Pendiente Reprogramación']) : null;
+        $this->secretary()->get('/secretaria/citas/CIT00000001/reprogramar?fecha=2026-11-13')
+            ->assertOk()->assertSee('Confirmar reprogramación')->assertSee('name="codSlot"', false);
+        ClinicalVisualSnapshots::save('reprogramar', $this->get('/secretaria/citas/CIT00000001/reprogramar?fecha=2026-11-13')->getContent());
     }
 
     public function test_checkin_sends_token_only_in_post_body_then_redirects_without_it(): void

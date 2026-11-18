@@ -4,6 +4,7 @@
     <a href="{{ route('medico.derivaciones.index') }}">Derivaciones</a><span aria-hidden="true">/</span>{{ $derivacion['codDer'] }}
 @endsection
 @section('medico_content')
+    <x-clinical-progress :state="$derivacion['estado']" :referral="true" />
     <x-admin.heading :title="$derivacion['codDer']" description="Trazabilidad administrativa de la derivación.">
         <x-admin.button variant="secondary" :href="route('medico.citas.show', $derivacion['codCitOrigen'])">Ver cita origen</x-admin.button>
     </x-admin.heading>

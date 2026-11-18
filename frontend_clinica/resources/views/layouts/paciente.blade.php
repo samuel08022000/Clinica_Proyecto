@@ -24,6 +24,7 @@
                 ['paciente.home', 'Inicio'],
                 ['paciente.citas.nueva', 'Agendar cita'],
                 ['paciente.citas', 'Mis citas'],
+                ['paciente.notificaciones', 'Notificaciones'],
                 ['paciente.perfil', 'Mi perfil'],
             ] as [$ruta, $texto])
                 <a href="{{ route($ruta) }}"

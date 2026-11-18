@@ -20,17 +20,18 @@
         <tr>
             <td style="background-color: #ffffff; border: 1px solid #dce5e8; border-radius: 8px; padding: 32px;">
                 <span style="display: inline-block; padding: 4px 12px; border-radius: 999px; background-color: #e4f3ed; color: #176c55; font-size: 13px; font-weight: 600; margin-bottom: 16px;">
-                    Cita confirmada
+                    {{ $passData['tipo'] ?? 'Cita confirmada' }}
                 </span>
 
                 <h1 style="margin: 0 0 12px; font-size: 24px; font-weight: 600; color: #0b233f; line-height: 1.2;">
-                    Pase QR de asistencia
+                    {{ $qrPngBinary !== '' ? 'Pase QR de asistencia' : 'Aviso de tu cita' }}
                 </h1>
 
                 <p style="margin: 0 0 24px; font-size: 15px; color: #526574;">
-                    Hola <strong style="color: #0b233f;">{{ $passData['nombrePaciente'] }}</strong>, tu reserva ha sido registrada. Presenta este código QR en recepción al llegar a la clínica para confirmar tu identidad y acreditar tu llegada.
+                    Hola <strong style="color: #0b233f;">{{ $passData['nombrePaciente'] }}</strong>. {{ $passData['mensaje'] ?? 'Tu reserva ha sido registrada. Presenta este QR en recepción para acreditar tu llegada.' }}
                 </p>
 
+                @if($qrPngBinary !== '')
                 <!-- Contenedor QR (.pac-cita style) -->
                 <div style="background-color: #f1f6f7; border-left: 4px solid #087f83; border-radius: 4px; padding: 24px; text-align: center; margin-bottom: 24px;">
                     <div style="display: inline-block; background-color: #ffffff; padding: 12px; border: 1px solid #dce5e8; border-radius: 4px;">
@@ -44,6 +45,7 @@
                     </p>
                 </div>
 
+                @endif
                 <!-- Datos del paciente y de la cita (.pac-data style) -->
                 <h2 style="margin: 0 0 14px; font-size: 16px; font-weight: 600; color: #0b233f;">
                     Información de la cita
@@ -78,9 +80,11 @@
                     </tr>
                 </table>
 
+                @if($qrPngBinary !== '')
                 <p style="margin: 20px 0 0; font-size: 13px; color: #526574;">
                     También encontrarás la imagen PNG del código QR adjunta a este correo para guardarla en tu dispositivo.
                 </p>
+                @endif
             </td>
         </tr>
 

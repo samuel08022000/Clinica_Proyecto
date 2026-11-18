@@ -4,6 +4,7 @@
     <a href="{{ route('secretaria.derivaciones.index') }}">Derivaciones</a><span aria-hidden="true">/</span>{{ $derivacion['codDer'] }}
 @endsection
 @section('reception_content')
+    <x-clinical-progress :state="$derivacion['estado']" :referral="true" />
     <x-admin.heading :title="$derivacion['codDer']" description="Datos administrativos necesarios para programar la cita hija.">
         @if($derivacion['estado'] === 'Pendiente' && empty($derivacion['codCitHija']))
             <x-admin.button :href="route('secretaria.reservas.create', ['codDer' => $derivacion['codDer']])">Programar cita hija</x-admin.button>

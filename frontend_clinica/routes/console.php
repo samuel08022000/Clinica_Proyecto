@@ -12,3 +12,6 @@ Schedule::command('clinical:maintenance slots')
     ->dailyAt('00:00')->timezone('America/La_Paz')->withoutOverlapping();
 Schedule::command('clinical:maintenance reception')
     ->everyFiveMinutes()->timezone('America/La_Paz')->withoutOverlapping();
+
+Schedule::command('clinical:notifications')
+    ->everyMinute()->timezone('America/La_Paz')->withoutOverlapping();

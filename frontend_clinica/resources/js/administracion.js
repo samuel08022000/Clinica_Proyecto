@@ -34,6 +34,7 @@ confirmation?.addEventListener('close', () => {
 });
 
 document.querySelectorAll('[data-admin-form]').forEach((form) => {
+    if (form.matches('[data-qr-form]')) return;
     form.addEventListener('submit', (event) => {
         if (form.dataset.submitting === 'true') {
             event.preventDefault();

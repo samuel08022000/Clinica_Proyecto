@@ -33,6 +33,11 @@ try {
                 $sql = Get-Content -LiteralPath (Join-Path $PSScriptRoot $permFile) -Raw -Encoding UTF8
                 $null = Invoke-ClinicalSql $sql $database
             }
+            if ($database -eq $state.tests) {
+                & (Join-Path $PSScriptRoot 'Apply-Notifications-Migration.ps1') -TestDatabase
+            } else {
+                & (Join-Path $PSScriptRoot 'Apply-Notifications-Migration.ps1')
+            }
         }
     }
 } finally { [Environment]::SetEnvironmentVariable('CLINICAL_OWNER_PASSWORD',$previous,'Process') }

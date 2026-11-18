@@ -16,8 +16,10 @@ use App\Http\Controllers\Medico\DashboardController as MedicoDashboardController
 use App\Http\Controllers\Medico\DerivacionController as MedicoDerivacionController;
 use App\Http\Controllers\Paciente\AppointmentController as PatientAppointmentController;
 use App\Http\Controllers\Paciente\DashboardController as PatientDashboardController;
+use App\Http\Controllers\Paciente\NotificationController;
 use App\Http\Controllers\Paciente\ProfileController as PatientProfileController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\QrPassController;
 use App\Http\Controllers\Secretaria\CheckinController;
 use App\Http\Controllers\Secretaria\CitaController;
 use App\Http\Controllers\Secretaria\DerivacionController as SecretariaDerivacionController;
@@ -31,7 +33,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PortalController::class, 'index'])->name('home');
 
-Route::get('/pase-qr/{token}', [\App\Http\Controllers\QrPassController::class, 'show'])
+Route::get('/pase-qr/{token}', [QrPassController::class, 'show'])
     ->where('token', '[A-Za-z0-9\-_=\.]+')
     ->name('pase-qr.show');
 
@@ -77,6 +79,9 @@ Route::prefix('paciente')->name('paciente.')
     ->middleware([PatientResponses::class, 'rol:ROL001'])
     ->group(function (): void {
         Route::get('/inicio', PatientDashboardController::class)->name('home');
+        Route::get('/notificaciones', [NotificationController::class, 'index'])->name('notificaciones');
+        Route::post('/citas/{cita}/correo-qr', [NotificationController::class, 'retry'])
+            ->whereAlphaNumeric('cita')->middleware('throttle:1,2')->name('citas.correo-qr');
         Route::get('/citas', [PatientAppointmentController::class, 'index'])->name('citas');
         Route::get('/citas/nueva', [PatientAppointmentController::class, 'create'])->name('citas.nueva');
         Route::post('/citas', [PatientAppointmentController::class, 'store'])->name('citas.store');
@@ -122,12 +127,14 @@ Route::prefix('secretaria')->name('secretaria.')
         Route::get('/citas/{cita}', [CitaController::class, 'show'])->whereAlphaNumeric('cita')->name('citas.show');
         Route::get('/checkin', [CheckinController::class, 'index'])->name('checkin.index');
         Route::post('/checkin', [CheckinController::class, 'store'])->name('checkin.store');
+        Route::post('/checkin/validar', [CheckinController::class, 'preview'])->middleware('throttle:30,1')->name('checkin.preview');
         Route::get('/citas/{cita}/asistencia', [CheckinController::class, 'attendance'])->whereAlphaNumeric('cita')->name('citas.asistencia');
         Route::get('/citas/{cita}/acreditacion', [CheckinController::class, 'accreditation'])->whereAlphaNumeric('cita')->name('citas.acreditacion');
         Route::get('/citas/{cita}/cancelar', [CitaController::class, 'cancel'])->whereAlphaNumeric('cita')->name('citas.cancelar');
         Route::post('/citas/{cita}/cancelar', [CitaController::class, 'cancelStore'])->whereAlphaNumeric('cita')->name('citas.cancelar.store');
         Route::get('/citas/{cita}/inasistencia', [CitaController::class, 'absence'])->whereAlphaNumeric('cita')->name('citas.inasistencia');
         Route::post('/citas/{cita}/inasistencia', [CitaController::class, 'absenceStore'])->whereAlphaNumeric('cita')->name('citas.inasistencia.store');
+        Route::get('/citas/{cita}/reprogramar', [CitaController::class, 'reschedule'])->whereAlphaNumeric('cita')->name('citas.reprogramar');
         Route::post('/citas/{cita}/reprogramar', [CitaController::class, 'rescheduleStore'])->whereAlphaNumeric('cita')->name('citas.reprogramar.store');
         Route::get('/derivaciones', [SecretariaDerivacionController::class, 'index'])->name('derivaciones.index');
         Route::get('/derivaciones/{derivacion}', [SecretariaDerivacionController::class, 'show'])->whereAlphaNumeric('derivacion')->name('derivaciones.show');

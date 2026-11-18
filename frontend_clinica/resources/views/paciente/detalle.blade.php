@@ -9,6 +9,21 @@
     </section>
 
     @include('paciente._cita', ['cita' => $cita, 'mostrarAcciones' => false])
+    <x-clinical-progress :state="$cita['estado']" />
+    @if(isset($cita['correoEstado']))
+        <section class="pac-panel"><h2>Correo del pase QR</h2>
+            <p>{{ match($cita['correoEstado']) {
+                'Enviada' => 'Aceptado por el transporte de correo. Esto no acredita recepción en tu bandeja.',
+                'EnProceso' => 'En proceso de envío.',
+                'Fallida' => 'Se agotaron los reintentos. Contacta a Secretaría; tu pase sigue disponible aquí.',
+                'Cancelada' => 'Envío cancelado por un cambio de la cita.',
+                default => ($cita['correoIntentos'] ?? 0) > 0 ? 'Error recuperable. Hay un reintento programado.' : 'Pendiente de envío.',
+            } }}</p>
+            @if($cita['correoEstado'] === 'Pendiente' && ($cita['correoIntentos'] ?? 0) > 0 && $cita['estado'] === 'Confirmada')
+                <form method="POST" action="{{ route('paciente.citas.correo-qr', $cita['codCit']) }}">@csrf<button class="button button--secondary">Reintentar correo</button></form>
+            @endif
+        </section>
+    @endif
 
     <section class="pac-panel" aria-labelledby="datos-cita-title">
         <h2 id="datos-cita-title">Información de la cita</h2>
@@ -49,8 +64,6 @@
             @endif
         </div>
     @endif
-@endsection
-
 @if (! empty($qrBase64))
         <section class="pac-panel" aria-labelledby="qr-cita-title">
             <h2 id="qr-cita-title">Pase QR de confirmación</h2>
@@ -60,8 +73,9 @@
                          alt="Código QR de cita {{ $cita['codCit'] }}">
                 </div>
                 <p class="pac-qr-box__note">
-                    Presenta este código en recepción al llegar a la clínica para confirmar tu identidad. También lo enviamos a tu correo electrónico.
+                    Presenta este código en recepción al llegar a la clínica. Está disponible aunque el envío del correo esté pendiente o haya fallado.
                 </p>
             </div>
         </section>
     @endif
+@endsection

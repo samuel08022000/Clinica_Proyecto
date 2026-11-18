@@ -8,6 +8,7 @@ use App\Services\Administration\AdministrationService;
 use App\Services\Medico\MedicoAnalisisService;
 use App\Services\Medico\MedicoAtencionService;
 use App\Services\Medico\MedicoDerivacionService;
+use App\Services\Paciente\PatientAppointmentService;
 use App\Services\Reception\ReceptionService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -401,6 +402,61 @@ final class MedicoMigrationTest extends TestCase
         $this->assertSame(21, (int) $db->scalar("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history'"));
         $this->assertSame(2, (int) $db->scalar("SELECT count(*) FROM pg_views WHERE schemaname='public'"));
         $this->assertSame(42, (int) $db->scalar("SELECT count(*) FROM pg_proc p WHERE pronamespace='public'::regnamespace AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e')"));
+    }
+
+    #[Test]
+    public function derived_child_completion_and_cancellation_update_the_ticket_and_audit_actor(): void
+    {
+        $fixture = $this->medicalFixture();
+        $origin = $this->attended($fixture);
+        $this->login($fixture['doctorA']['codUsu']);
+        $referrals = app(MedicoDerivacionService::class);
+        $first = $referrals->create($origin['codCit'], ['codEspDestino' => $fixture['specialtyB']['codEsp'], 'motivo' => 'AUDIT_TEST completar']);
+        $second = $referrals->create($origin['codCit'], ['codEspDestino' => $fixture['specialtyB']['codEsp'], 'motivo' => 'AUDIT_TEST cancelar']);
+        $this->login($fixture['secretary']['codUsu']);
+        $reception = app(ReceptionService::class);
+        $slots = $reception->request('GET', 'disponibilidad', ['codPac' => $fixture['patient'], 'codEsp' => $fixture['specialtyB']['codEsp'], 'fecha' => $this->date(1)]);
+        $child = $reception->request('POST', 'citas', ['codDer' => $first['codDer'], 'codSlot' => $slots[1]['codSlot']]);
+        $cancelled = $reception->request('POST', 'citas', ['codDer' => $second['codDer'], 'codSlot' => $slots[2]['codSlot']]);
+        $reception->request('POST', 'citas/'.$cancelled['codCit'].'/cancelar', ['motivo' => 'AUDIT_TEST no requiere interconsulta']);
+        $this->assertSame('Cancelada', $this->scalar('SELECT estado FROM derivaciones WHERE cod_der=?', [$second['codDer']]));
+        $this->assertSame($fixture['secretary']['codUsu'], $this->scalar("SELECT cod_usu FROM bitacora WHERE nombre_tabla='derivaciones' AND clave_registro=? ORDER BY secuencial DESC LIMIT 1", [$second['codDer']]));
+        $this->checkedIn($fixture, $child);
+        $this->login($fixture['doctorB']['codUsu']);
+        app(MedicoAtencionService::class)->finish($child['codCit']);
+        $this->assertSame('Completada', $this->scalar('SELECT estado FROM derivaciones WHERE cod_der=?', [$first['codDer']]));
+        $this->assertSame($fixture['doctorB']['codUsu'], $this->scalar("SELECT cod_usu FROM bitacora WHERE nombre_tabla='derivaciones' AND clave_registro=? ORDER BY secuencial DESC LIMIT 1", [$first['codDer']]));
+        $this->login($fixture['doctorA']['codUsu']);
+        $this->assertSame('Completada', $referrals->detail($first['codDer'])['estado']);
+    }
+
+    #[Test]
+    public function patient_overlap_is_rejected_at_write_across_doctors_and_channels_but_adjacency_is_allowed(): void
+    {
+        $fixture = $this->medicalFixture();
+        $slotA = $this->scalar('SELECT cod_slot FROM slots_agenda WHERE cod_med=? AND fecha=fecha_clinica()+1 ORDER BY inicio_at LIMIT 1', [$fixture['doctorA']['codMed']]);
+        $slotB = $this->scalar('SELECT cod_slot FROM slots_agenda WHERE cod_med=? AND fecha=fecha_clinica()+1 ORDER BY inicio_at LIMIT 1', [$fixture['doctorB']['codMed']]);
+        $adjacentB = $this->scalar('SELECT cod_slot FROM slots_agenda WHERE cod_med=? AND fecha=fecha_clinica()+1 ORDER BY inicio_at LIMIT 1 OFFSET 1', [$fixture['doctorB']['codMed']]);
+        $partialB = $this->scalar("INSERT INTO slots_agenda(cod_hor,cod_med,cod_esp,inicio_at,fin_at)
+            SELECT cod_hor,cod_med,cod_esp,inicio_at+interval '10 minutes',fin_at+interval '10 minutes'
+            FROM slots_agenda WHERE cod_slot=? RETURNING cod_slot", [$slotB]);
+        $this->login($fixture['patientUser']);
+        $appointments = app(PatientAppointmentService::class);
+        $bookedA = $appointments->reserve($slotA);
+        $this->login($fixture['secretary']['codUsu']);
+        $reception = app(ReceptionService::class);
+        foreach ([$slotB, $partialB] as $conflicting) {
+            $this->expectDomain(409, fn () => $reception->request('POST', 'citas', ['codPac' => $fixture['patient'], 'codSlot' => $conflicting]));
+        }
+        $bookedB = $reception->request('POST', 'citas', ['codPac' => $fixture['patient'], 'codSlot' => $adjacentB]);
+        $this->expectDomain(409, fn () => $reception->request('POST', 'citas/'.$bookedB['codCit'].'/reprogramar', ['codSlot' => $partialB, 'motivo' => 'AUDIT_TEST conflicto']));
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$bookedB['codCit']]));
+        $reception->request('POST', 'citas/'.$bookedA['codCit'].'/cancelar', ['motivo' => 'AUDIT_TEST cambio de canal']);
+        $reception->request('POST', 'citas', ['codPac' => $fixture['patient'], 'codSlot' => $slotA]);
+        $this->login($fixture['patientUser']);
+        $this->expectDomain(409, fn () => $appointments->reserve($slotB));
+        $this->assertSame(2, (int) $this->scalar("SELECT count(*) FROM citas WHERE cod_pac=? AND estado='Confirmada'", [$fixture['patient']]));
+        $this->assertSame(0, (int) $this->scalar('SELECT count(*) FROM citas WHERE cod_slot=?', [$partialB]));
     }
 
     private function medicalFixture(): array

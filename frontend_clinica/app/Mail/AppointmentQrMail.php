@@ -14,7 +14,7 @@ final class AppointmentQrMail extends Mailable
     use Queueable, SerializesModels;
 
     /**
-     * @param array<string, mixed> $passData
+     * @param  array<string, mixed>  $passData
      */
     public function __construct(
         public readonly array $passData,
@@ -24,7 +24,7 @@ final class AppointmentQrMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Confirmación de cita y Pase QR - ' . $this->passData['codCit'],
+            subject: ($this->passData['tipo'] ?? 'Confirmación de cita').' - '.$this->passData['codCit'],
         );
     }
 
@@ -40,8 +40,8 @@ final class AppointmentQrMail extends Mailable
      */
     public function attachments(): array
     {
-        return [
-            Attachment::fromData(fn () => $this->qrPngBinary, 'pase-cita-' . $this->passData['codCit'] . '.png')
+        return $this->qrPngBinary === '' ? [] : [
+            Attachment::fromData(fn () => $this->qrPngBinary, 'pase-cita-'.$this->passData['codCit'].'.png')
                 ->withMime('image/png'),
         ];
     }

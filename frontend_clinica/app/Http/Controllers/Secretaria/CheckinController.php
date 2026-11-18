@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Secretaria;
 
 use App\Exceptions\ClinicalOperationException;
 use App\Http\Requests\Secretaria\CheckinRequest;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 
@@ -17,7 +18,7 @@ class CheckinController extends ReceptionController
     public function store(CheckinRequest $request): RedirectResponse
     {
         try {
-            $attendance = $this->write('checkin', $request->safe()->only('tokenQr'), 'En Espera');
+            $attendance = $this->write('checkin', $request->safe()->only(['tokenQr', 'codCit']), 'En Espera');
         } catch (ClinicalOperationException $exception) {
             if (! in_array($exception->status, [400, 409, 422, 502, 503], true)) {
                 throw $exception;
@@ -32,6 +33,15 @@ class CheckinController extends ReceptionController
         }
 
         return redirect()->route('secretaria.citas.asistencia', $attendance['codCit'])->with('success', 'Check-in registrado. La llegada fue acreditada.');
+    }
+
+    public function preview(CheckinRequest $request): JsonResponse
+    {
+        try {
+            return response()->json($this->backend->request('POST', 'checkin/validar', $request->safe()->only('tokenQr')));
+        } catch (ClinicalOperationException $error) {
+            return response()->json(['message' => 'El QR no admite llegada. Comprueba fecha, estado e identidad del paciente.'], $error->status);
+        }
     }
 
     public function attendance(string $cita): View

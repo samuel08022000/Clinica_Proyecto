@@ -8,10 +8,12 @@ use App\Contracts\PatientProfileProvider;
 use App\Exceptions\AuthDomainException;
 use App\Models\Usuario;
 use App\Services\Auth\AccountStatusService;
+use App\Services\Notifications\AppointmentNotificationService;
 use Illuminate\Database\QueryException;
 use Mockery;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ClinicalVisualSnapshots;
 use Tests\TestCase;
 
 class PatientPanelTest extends TestCase
@@ -127,11 +129,42 @@ class PatientPanelTest extends TestCase
         );
     }
 
+    public function test_booking_never_claims_a_mail_delivery_before_the_worker_runs(): void
+    {
+        $this->appointments->shouldReceive('reserve')->once()->with('SLOT0001')->andReturn($this->appointment('CIT0004'));
+        $this->patient()->post(route('paciente.citas.store'), ['codSlot' => 'SLOT0001'])
+            ->assertRedirect(route('paciente.citas.show', 'CIT0004'))
+            ->assertSessionHas('success', fn ($message) => str_contains($message, 'pendiente') && ! str_contains($message, 'enviamos'));
+    }
+
+    public function test_recoverable_mail_status_is_rendered_without_hiding_the_appointment(): void
+    {
+        $this->appointments->shouldReceive('detail')->with('CIT0001')->andReturn($this->appointment() + [
+            'correoEstado' => 'Pendiente', 'correoIntentos' => 1, 'puedeVerPaseQr' => false,
+        ]);
+        $this->patient()->get(route('paciente.citas.show', 'CIT0001'))->assertOk()
+            ->assertSee('Error recuperable')->assertSee('Reintentar correo')->assertSee('Progreso de cita');
+        ClinicalVisualSnapshots::save('paciente', $this->get(route('paciente.citas.show', 'CIT0001'))->getContent());
+    }
+
     public function test_guest_is_redirected_to_login_without_contacting_clinical_db(): void
     {
         $this->databaseOffline = true;
 
         $this->get(route('paciente.home'))->assertRedirect(route('login'));
+    }
+
+    public function test_notifications_require_the_patient_role_and_render_only_service_owned_notices(): void
+    {
+        $notifications = $this->mock(AppointmentNotificationService::class);
+        $notifications->shouldReceive('patientNotices')->once()->andReturn([
+            ['cod_not' => 1, 'cod_cit' => 'CIT0001', 'tipo_alerta' => 'Confirmacion', 'mensaje' => 'Aviso propio de prueba', 'creado_en' => '2026-11-17 10:00'],
+        ]);
+        $this->get(route('paciente.notificaciones'))->assertRedirect(route('login'));
+        $this->accountRole = 'ROL003';
+        $this->patient('ROL003')->get(route('paciente.notificaciones'))->assertForbidden();
+        $this->accountRole = 'ROL001';
+        $this->patient()->get(route('paciente.notificaciones'))->assertOk()->assertSee('Aviso propio de prueba')->assertSee('CIT0001');
     }
 
     public function test_patient_sees_original_navigation_and_laravel_backed_dashboard(): void

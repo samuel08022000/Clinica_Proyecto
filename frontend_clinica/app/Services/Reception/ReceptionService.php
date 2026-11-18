@@ -74,7 +74,10 @@ class ReceptionService
             return $this->appointment($m[1]);
         }
         if ($method === 'POST' && $path === 'checkin') {
-            return $this->checkin((string) ($data['tokenQr'] ?? ''));
+            return $this->checkin((string) ($data['tokenQr'] ?? ''), $data['codCit'] ?? null);
+        }
+        if ($method === 'POST' && $path === 'checkin/validar') {
+            return $this->previewCheckin((string) ($data['tokenQr'] ?? ''));
         }
         if ($method === 'GET' && $path === 'derivaciones') {
             return $this->referrals($data);
@@ -255,23 +258,60 @@ class ReceptionService
         return $row ? (array) $row : self::missing('La cita solicitada no existe.');
     }
 
-    private function checkin(string $token): array
+    private function qrToken(string $token): string
     {
+        $token = trim($token);
         if (str_contains($token, '/pase-qr/')) {
-            $token = basename((string) parse_url($token, PHP_URL_PATH));
+            $path = parse_url($token, PHP_URL_PATH);
+            if (! is_string($path) || ! preg_match('~^/pase-qr/([^/]+)$~D', $path, $match)) {
+                throw new ClinicalOperationException(400, 'El QR no es válido.', 'QR_INVALIDO');
+            }
+            $token = rawurldecode($match[1]);
         }
         if ($token === '' || strlen($token) > 4096) {
             throw new ClinicalOperationException(400, 'El QR no es válido.', 'QR_INVALIDO');
         }
+
+        return $token;
+    }
+
+    private function previewCheckin(string $rawToken): array
+    {
+        $token = $this->qrToken($rawToken);
+        $row = $this->db()->selectOne(
+            'SELECT c.cod_cit AS "codCit", c.cod_pac AS "codPac", u.nombre_completo AS "nombrePaciente",
+                c.fecha, c.hora_inicio AS "horaInicio", c.estado
+             FROM verificar_token_qr(?) q JOIN citas c ON c.cod_cit=q.cod_cit AND c.token_qr=?
+             JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu
+             WHERE c.fecha=fecha_clinica() AND c.estado=\'Confirmada\' AND cita_admite_checkin(c.cod_cit)',
+            [$token, $token],
+        );
+        if (! $row) {
+            throw new ClinicalOperationException(409, 'El QR no corresponde a una cita del día que admita llegada.', 'QR_INVALIDO');
+        }
+
+        return (array) $row;
+    }
+
+    private function checkin(string $rawToken, ?string $expectedCode = null): array
+    {
+        $token = $this->qrToken($rawToken);
         $user = $this->roles->require('ROL002');
-        $code = $this->transactions->run(function (Connection $db) use ($token, $user) {
+        $code = $this->transactions->run(function (Connection $db) use ($token, $user, $expectedCode) {
             $secretary = $this->assertSecretary($db, $user->cod_usu);
+            if ($expectedCode !== null) {
+                $preview = $this->previewCheckin($token);
+                if ($preview['codCit'] !== $expectedCode) {
+                    throw new ClinicalOperationException(409, 'El QR cambió. Valida nuevamente la identidad del paciente.', 'QR_INVALIDO');
+                }
+            }
 
             return $db->scalar('SELECT registrar_checkin(?,?)', [$token, $secretary]);
         });
 
         return $this->attendance($code);
     }
+
     private function cancel(string $code, array $data): array
     {
         $user = $this->roles->require('ROL002');

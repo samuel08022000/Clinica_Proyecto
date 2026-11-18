@@ -6,6 +6,6 @@ class CheckinRequest extends ReceptionRequest
 {
     public function rules(): array
     {
-        return ['tokenQr' => ['required', 'string', 'max:4096']];
+        return ['tokenQr' => ['required', 'string', 'max:4096'], 'codCit' => ['nullable', ...self::identifier()]];
     }
 }

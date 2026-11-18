@@ -6,6 +6,10 @@
 @section('reception_content')
     <x-admin.heading :title="$appointment['codCit']" description="Información administrativa de la cita." />
     <section class="a-panel"><h2>Detalle de la reserva</h2><x-appointment-summary :appointment="$appointment" /></section>
+    <x-clinical-progress :state="$appointment['estado']" />
+    @if(in_array($appointment['estado'], ['Confirmada', 'Afectada/Pendiente Reprogramación'], true))
+        <x-admin.button variant="secondary" :href="route('secretaria.citas.reprogramar', $appointment['codCit'])">Reprogramar cita</x-admin.button>
+    @endif
     @if(session('appointment_result'))
         <section class="a-panel"><h2>Resultado de la operación</h2><dl class="a-details">
             @foreach(['estado' => 'Estado informado', 'motivoCancelacion' => 'Motivo de cancelación', 'canceladoPorUsu' => 'Cancelado por', 'canceladoEn' => 'Fecha de cancelación', 'codInc' => 'Incidencia', 'registradoPorUsu' => 'Registrado por', 'fechaRegistro' => 'Fecha de registro', 'motivo' => 'Motivo administrativo'] as $key => $label)

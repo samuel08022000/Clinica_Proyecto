@@ -47,7 +47,7 @@ final class ClinicalInfrastructureTest extends TestCase
         $this->assertSame(['btree_gist', 'pgcrypto'], $this->owner->query("SELECT extname FROM pg_extension WHERE extname IN ('btree_gist','pgcrypto') ORDER BY extname")->fetchAll(PDO::FETCH_COLUMN));
         $definitions = [];
         $triggers = [];
-        foreach (['B9__instalacion_sin_datos_demo.sql', 'V10__derivaciones_recepcion_enlazadas.sql', 'R__verificacion_email_otp.sql'] as $file) {
+        foreach (['B9__instalacion_sin_datos_demo.sql', 'V10__derivaciones_recepcion_enlazadas.sql', 'R__verificacion_email_otp.sql', '../upgrade/V11__permisos_notificaciones.sql'] as $file) {
             $sql = str_replace("\r\n", "\n", file_get_contents(base_path('../database_clinica/migration/'.$file)));
             preg_match_all('/CREATE(?: OR REPLACE)? FUNCTION public\.(\w+)\s*\(.*?\bAS \$\$(.*?)\$\$/si', $sql, $matches, PREG_SET_ORDER);
             foreach ($matches as $match) {
