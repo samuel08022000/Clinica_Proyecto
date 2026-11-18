@@ -43,6 +43,15 @@ class AppointmentNotificationService
     public function retryConfirmation(string $code): void
     {
         $user = $this->roles->require('ROL001');
+        $existing = $this->db()->selectOne(
+            "SELECT n.estado FROM notificaciones n JOIN citas c ON c.cod_cit=n.cod_cit
+             JOIN pacientes p ON p.cod_pac=c.cod_pac
+             WHERE c.cod_cit=? AND p.cod_usu=? AND n.canal='Email' AND n.tipo_alerta='Confirmacion'
+             ORDER BY n.cod_not DESC LIMIT 1", [$code, $user->cod_usu],
+        );
+        if ($existing?->estado === 'Enviada') {
+            return;
+        }
         $changed = $this->db()->update(
             "UPDATE notificaciones n SET estado='Pendiente', fecha_programada=now(), ultimo_error=NULL
              FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
@@ -116,6 +125,7 @@ class AppointmentNotificationService
                 n.estado AS \"correoEstado\", n.intentos, n.enviado_en AS \"enviadoEn\",
                 CASE WHEN n.ultimo_error LIKE 'SMTP_AUTH:%' THEN 'SMTP_AUTH'
                      WHEN n.ultimo_error LIKE 'SMTP_CONNECTION:%' THEN 'SMTP_CONNECTION'
+                     WHEN n.ultimo_error LIKE 'QR_RENDERER:%' THEN 'QR_RENDERER'
                      WHEN n.ultimo_error IS NOT NULL THEN 'MAIL_ERROR' ELSE NULL END AS \"errorCodigo\"
              FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
              LEFT JOIN notificaciones n ON n.cod_cit=c.cod_cit AND n.canal='Email' AND n.tipo_alerta=?
@@ -143,6 +153,7 @@ class AppointmentNotificationService
         } catch (Throwable $error) {
             $description = strtolower($error->getMessage());
             $safeError = match (true) {
+                str_contains($description, 'gd extension'), str_contains($description, 'imagecreatetruecolor') => 'QR_RENDERER: No se pudo generar el PNG. Revisa GD y reinicia el proceso PHP.',
                 str_contains($description, 'authenticate'), str_contains($description, '535'), str_contains($description, '534') => 'SMTP_AUTH: El servidor rechazó la autenticación configurada.',
                 str_contains($description, 'connect'), str_contains($description, 'timed out'), str_contains($description, 'getaddrinfo') => 'SMTP_CONNECTION: No se pudo conectar con el transporte de correo.',
                 default => 'Error recuperable de transporte o de generación del pase.',

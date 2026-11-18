@@ -20,7 +20,11 @@
                 default => ($cita['correoIntentos'] ?? 0) > 0 ? 'Error recuperable. Hay un reintento programado.' : 'Pendiente de envío.',
             } }}</p>
             @if($cita['correoEstado'] === 'Pendiente' && $cita['estado'] === 'Confirmada')
-                <form method="POST" action="{{ route('paciente.citas.correo-qr', $cita['codCit']) }}">@csrf<button class="button button--secondary">{{ ($cita['correoIntentos'] ?? 0) > 0 ? 'Reintentar correo' : 'Enviar QR a mi correo' }}</button></form>
+                <form method="POST" action="{{ route('paciente.citas.correo-qr', $cita['codCit']) }}" data-qr-resend-form data-retry-until="{{ now()->getTimestamp() + ($qrRetryAfter ?? 0) }}">
+                    @csrf
+                    <button class="button button--secondary" data-qr-resend-button @disabled(($qrRetryAfter ?? 0) > 0)>{{ ($cita['correoIntentos'] ?? 0) > 0 ? 'Reintentar correo' : 'Enviar QR a mi correo' }}</button>
+                    <p class="a-help" role="status" aria-live="polite" data-qr-resend-status>@if(($qrRetryAfter ?? 0) > 0)Podrás reintentar en {{ $qrRetryAfter }} segundos.@endif</p>
+                </form>
             @endif
         </section>
     @endif

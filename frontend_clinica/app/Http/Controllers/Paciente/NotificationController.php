@@ -19,9 +19,10 @@ class NotificationController extends Controller
         $notifications->retryConfirmation($cita);
         $mailState = $notifications->sendConfirmation($cita);
 
-        return redirect()->route('paciente.citas.show', $cita)
-            ->with('success', $mailState === 'Enviada'
-                ? 'El correo con tu pase QR fue aceptado por el transporte. No se creó otra cita.'
-                : 'No se pudo confirmar el envío. Tu QR sigue disponible y la cita se conserva.');
+        $response = redirect()->route('paciente.citas.show', $cita);
+
+        return $mailState === 'Enviada'
+            ? $response->with('success', 'El correo con tu pase QR fue aceptado por el transporte. No se creó otra cita.')
+            : $response->withErrors(['correoQr' => 'No se pudo confirmar el envío. Tu QR sigue disponible y la cita se conserva. Espera la cuenta regresiva antes de reintentar.']);
     }
 }

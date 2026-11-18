@@ -141,6 +141,40 @@ class PatientPanelTest extends TestCase
             ->assertSessionHas('success', fn ($message) => str_contains($message, 'pendiente') && ! str_contains($message, 'enviamos'));
     }
 
+    public function test_qr_email_cooldown_returns_to_the_detail_and_shows_the_remaining_wait(): void
+    {
+        $this->notifications->shouldReceive('retryConfirmation')->once()->with('CIT0001')->andReturnNull();
+        $this->notifications->shouldReceive('sendConfirmation')->once()->with('CIT0001')->andReturn('Pendiente');
+        $this->appointments->shouldReceive('detail')->with('CIT0001')->andReturn($this->appointment() + ['correoEstado' => 'Pendiente', 'correoIntentos' => 2]);
+        $this->patient()->post(route('paciente.citas.correo-qr', 'CIT0001'))->assertRedirect(route('paciente.citas.show', 'CIT0001'));
+        $this->post(route('paciente.citas.correo-qr', 'CIT0001'))->assertStatus(303)
+            ->assertRedirect(route('paciente.citas.show', 'CIT0001'))->assertSessionHasErrors('correoQr')->assertHeader('Retry-After');
+        $detail = $this->get(route('paciente.citas.show', 'CIT0001'))->assertOk()
+            ->assertViewHas('qrRetryAfter', fn ($seconds) => $seconds > 0 && $seconds <= 120)
+            ->assertSee('Podrás reintentar en')->assertSee('data-qr-resend-form', false)->assertDontSee('Too Many Requests');
+        ClinicalVisualSnapshots::save('qr-mail-wait', $detail->getContent());
+    }
+
+    public function test_qr_email_limit_is_per_appointment_and_json_reports_the_cooldown(): void
+    {
+        $this->notifications->shouldReceive('retryConfirmation')->twice()->andReturnNull();
+        $this->notifications->shouldReceive('sendConfirmation')->with('CIT0001')->once()->andReturn('Enviada');
+        $this->notifications->shouldReceive('sendConfirmation')->with('CIT0002')->once()->andReturn('Enviada');
+        $this->patient()->post(route('paciente.citas.correo-qr', 'CIT0001'))->assertRedirect();
+        $this->postJson(route('paciente.citas.correo-qr', 'CIT0001'))->assertStatus(429)
+            ->assertJsonPath('retryAfter', fn ($seconds) => $seconds > 0 && $seconds <= 120)->assertHeader('Retry-After');
+        $this->post(route('paciente.citas.correo-qr', 'CIT0002'))->assertRedirect()->assertSessionHas('success');
+    }
+
+    public function test_qr_email_retry_is_allowed_after_the_cooldown_expires(): void
+    {
+        $this->notifications->shouldReceive('retryConfirmation')->twice()->with('CIT0001')->andReturnNull();
+        $this->notifications->shouldReceive('sendConfirmation')->twice()->with('CIT0001')->andReturn('Enviada');
+        $this->patient()->post(route('paciente.citas.correo-qr', 'CIT0001'))->assertRedirect();
+        $this->travel(121)->seconds();
+        $this->post(route('paciente.citas.correo-qr', 'CIT0001'))->assertRedirect()->assertSessionHas('success');
+    }
+
     public function test_booking_sends_the_qr_after_the_reservation_is_confirmed(): void
     {
         $confirmed = false;

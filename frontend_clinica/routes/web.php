@@ -29,6 +29,7 @@ use App\Http\Middleware\AdministrativeResponses;
 use App\Http\Middleware\MedicoResponses;
 use App\Http\Middleware\PatientResponses;
 use App\Http\Middleware\ReceptionResponses;
+use App\Http\Middleware\ThrottleAppointmentQrMail;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [PortalController::class, 'index'])->name('home');
@@ -81,7 +82,7 @@ Route::prefix('paciente')->name('paciente.')
         Route::get('/inicio', PatientDashboardController::class)->name('home');
         Route::get('/notificaciones', [NotificationController::class, 'index'])->name('notificaciones');
         Route::post('/citas/{cita}/correo-qr', [NotificationController::class, 'retry'])
-            ->whereAlphaNumeric('cita')->middleware('throttle:1,2')->name('citas.correo-qr');
+            ->whereAlphaNumeric('cita')->middleware(ThrottleAppointmentQrMail::class)->name('citas.correo-qr');
         Route::get('/citas', [PatientAppointmentController::class, 'index'])->name('citas');
         Route::get('/citas/nueva', [PatientAppointmentController::class, 'create'])->name('citas.nueva');
         Route::post('/citas', [PatientAppointmentController::class, 'store'])->name('citas.store');

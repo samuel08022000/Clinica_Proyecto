@@ -494,6 +494,9 @@ final class AdministrationReceptionMigrationTest extends TestCase
         $this->assertSame('image/png', $messages->first()->getOriginalMessage()->getAttachments()[0]->getMediaType().'/'.$messages->first()->getOriginalMessage()->getAttachments()[0]->getMediaSubtype());
         $patientUser = $this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]);
         $this->login($patientUser);
+        $worker->retryConfirmation($code);
+        $this->assertSame('Enviada', $worker->sendConfirmation($code));
+        $this->assertSame(1, $worker->confirmationStatus($code)['intentos']);
         $this->post('/paciente/citas', ['codSlot' => $slots[2]['codSlot']])->assertRedirect();
         $webCode = $this->scalar('SELECT cod_cit FROM citas WHERE cod_slot=?', [$slots[2]['codSlot']]);
         $this->assertSame('Enviada', $worker->confirmationStatus($webCode)['correoEstado']);

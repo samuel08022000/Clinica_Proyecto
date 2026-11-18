@@ -1,6 +1,7 @@
 import './administracion';
 import './secretaria';
 import './qr-checkin';
+import './qr-resend';
 import './clinical-live';
 import './medico';
 

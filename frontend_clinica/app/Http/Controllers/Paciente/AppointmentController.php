@@ -6,6 +6,7 @@ use App\Contracts\PatientAppointmentManager;
 use App\Contracts\PatientAvailabilityProvider;
 use App\Exceptions\ClinicalOperationException;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\ThrottleAppointmentQrMail;
 use App\Http\Requests\Paciente\BookingSearchRequest;
 use App\Http\Requests\Paciente\CancelAppointmentRequest;
 use App\Http\Requests\Paciente\RescheduleAppointmentRequest;
@@ -17,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\View\View;
 use Throwable;
 
@@ -101,7 +103,7 @@ final class AppointmentController extends Controller
                 : 'El correo QR sigue pendiente; puedes solicitar su envío desde aquí.'));
     }
 
-    public function show(string $cita): View
+    public function show(Request $request, string $cita): View
     {
         $detail = PatientAppointmentPresentation::decorate($this->appointments->detail($cita));
         $qrBase64 = null;
@@ -119,6 +121,7 @@ final class AppointmentController extends Controller
         return view('paciente.detalle', [
             'cita' => $detail,
             'qrBase64' => $qrBase64,
+            'qrRetryAfter' => RateLimiter::availableIn(ThrottleAppointmentQrMail::key($request, $cita)),
         ]);
     }
 
