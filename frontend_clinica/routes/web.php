@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Administracion\AgendaController;
 use App\Http\Controllers\Administracion\BloqueoController;
+use App\Http\Controllers\Administracion\ColaController;
 use App\Http\Controllers\Administracion\DashboardController;
 use App\Http\Controllers\Administracion\EspecialidadController;
 use App\Http\Controllers\Administracion\MedicoController;
@@ -182,5 +183,6 @@ Route::prefix('administracion')->name('administracion.')
         Route::get('/pacientes/{paciente}/sanciones/crear', [SancionController::class, 'create'])->whereAlphaNumeric('paciente')->name('sanciones.create');
         Route::post('/pacientes/{paciente}/sanciones', [SancionController::class, 'store'])->whereAlphaNumeric('paciente')->name('sanciones.store');
         Route::get('/pacientes/{paciente}/sanciones/{sancion}', [SancionController::class, 'show'])->whereAlphaNumeric(['paciente', 'sancion'])->name('sanciones.show');
+        Route::get('/colas', [ColaController::class, 'index'])->name('colas.index');
 
     });

@@ -7,7 +7,8 @@
     </details>
     @foreach([
         ['especialidades', 'Especialidades', 'specialty'], ['agendas', 'Agendas y horarios', 'calendar'],
-        ['bloqueos', 'Bloqueos médicos', 'block'], ['pacientes', 'Pacientes', 'people'], ['sanciones', 'Sanciones', 'shield']
+        ['bloqueos', 'Bloqueos médicos', 'block'], ['pacientes', 'Pacientes', 'people'], ['sanciones', 'Sanciones', 'shield'],
+        ['colas', 'Teoría de colas', 'history']
     ] as [$module, $label, $icon])
         <a href="{{ route('administracion.'.$module.'.index') }}" @if(request()->routeIs('administracion.'.$module.'.*')) aria-current="page" @endif><x-admin.icon :name="$icon" />{{ $label }}</a>
     @endforeach
