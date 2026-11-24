@@ -3,25 +3,25 @@
 namespace App\Http\Controllers\Administracion;
 
 use App\Exceptions\ClinicalOperationException;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Administracion\DashboardRequest;
+use App\Services\Administration\DashboardService;
 use Illuminate\Contracts\View\View;
 
-class DashboardController extends AdminController
+class DashboardController extends Controller
 {
-    public function __invoke(): View
+    public function __invoke(DashboardRequest $request, DashboardService $service): View
     {
-        $counts = [];
-        foreach (['medicos', 'secretarias', 'especialidades'] as $catalog) {
-            try {
-                // These contracts are unpaginated catalogs, not an expensive walk through pages.
-                $counts[$catalog] = count($this->backend->request('GET', 'personal/'.$catalog, ['estado' => 'Activo']));
-            } catch (ClinicalOperationException $exception) {
-                if ($exception->status < 500) {
-                    throw $exception;
-                }
-                $counts[$catalog] = null;
+        $filters = $request->validated();
+        try {
+            $dashboard = $service->snapshot($filters);
+        } catch (ClinicalOperationException $exception) {
+            if ($exception->status < 500) {
+                throw $exception;
             }
+            $dashboard = null;
         }
 
-        return view('administracion.dashboard', compact('counts'));
+        return view('administracion.dashboard', compact('dashboard', 'filters'));
     }
 }

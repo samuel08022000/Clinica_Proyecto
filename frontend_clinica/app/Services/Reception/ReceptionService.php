@@ -6,9 +6,11 @@ use App\Exceptions\ClinicalOperationException;
 use App\Services\Clinical\ClinicalRoleGuard;
 use App\Services\Clinical\ClinicalSqlException;
 use App\Services\Clinical\ClinicalTransaction;
+use App\Support\ClinicalLog;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
+use Throwable;
 
 /** Casos de uso de recepción. Las reservas y transiciones siguen en PostgreSQL. */
 class ReceptionService
@@ -21,11 +23,17 @@ class ReceptionService
 
     public function request(string $method, string $path, array $data = []): array
     {
-        $this->roles->require('ROL002');
         try {
+            $this->roles->require('ROL002');
+
             return $this->dispatch(strtoupper($method), trim($path, '/'), $data);
         } catch (QueryException $error) {
-            throw ClinicalSqlException::fromQuery($error);
+            $safeError = ClinicalSqlException::fromQuery($error);
+            ClinicalLog::failure('reception.operation', $safeError);
+            throw $safeError;
+        } catch (Throwable $error) {
+            ClinicalLog::failure('reception.operation', $error);
+            throw $error;
         }
     }
 
@@ -192,7 +200,7 @@ class ReceptionService
             }
 
             return $db->scalar('SELECT reservar_cita(?,?,?,?,?)', [$patient, $data['codSlot'], $user->cod_usu, 'Ventanilla', $referralCode]);
-        });
+        }, 'reception.appointment.reserved', []);
 
         return $this->appointment($code);
     }
@@ -320,7 +328,7 @@ class ReceptionService
             }
 
             return $db->scalar('SELECT registrar_checkin(?,?)', [$token, $secretary]);
-        });
+        }, 'reception.appointment.checked_in', []);
 
         return $this->attendance($code);
     }
@@ -331,7 +339,7 @@ class ReceptionService
         $this->transactions->run(function (Connection $db) use ($code, $data, $user) {
             $this->assertSecretary($db, $user->cod_usu);
             $db->scalar('SELECT cancelar_cita(?,?,?)', [$code, $user->cod_usu, trim($data['motivo'] ?? '')]);
-        });
+        }, 'reception.appointment.cancelled', ['entity_id' => $code]);
         $result = $this->historyDetail($code);
         $result['cancelada'] = true;
 
@@ -344,7 +352,7 @@ class ReceptionService
         $this->transactions->run(function (Connection $db) use ($code, $user) {
             $this->assertSecretary($db, $user->cod_usu);
             $db->scalar('SELECT registrar_inasistencia(?,?)', [$code, $user->cod_usu]);
-        });
+        }, 'reception.appointment.absence_registered', ['entity_id' => $code]);
         $result = $this->historyDetail($code);
         $result['inasistenciaRegistrada'] = true;
 
@@ -358,7 +366,7 @@ class ReceptionService
             $this->assertSecretary($db, $user->cod_usu);
 
             return $db->scalar('SELECT reprogramar_cita(?,?,?,?)', [$code, $data['codSlot'], $user->cod_usu, trim($data['motivo'] ?? 'Reprogramación de cita')]);
-        });
+        }, 'reception.appointment.rescheduled', ['previous_appointment_id' => $code]);
 
         return $this->appointment($new);
     }

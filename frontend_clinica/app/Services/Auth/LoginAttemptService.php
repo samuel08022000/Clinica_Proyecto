@@ -3,6 +3,7 @@
 namespace App\Services\Auth;
 
 use App\Exceptions\AuthDomainException;
+use App\Support\ClinicalLog;
 use Illuminate\Cache\RateLimiter;
 
 final class LoginAttemptService
@@ -19,12 +20,14 @@ final class LoginAttemptService
     {
         $key = $this->key($email, $ip);
         if ($this->limiter->tooManyAttempts($key, self::MAX_ATTEMPTS)) {
+            ClinicalLog::event('auth.login.blocked', ['action' => 'pair', 'error_code' => 'TOO_MANY_ATTEMPTS'], 'warning');
             throw new AuthDomainException('TOO_MANY_ATTEMPTS', 429,
                 'Se alcanzó el límite de intentos. Espera antes de volver a intentarlo.',
                 $this->limiter->availableIn($key));
         }
         $emailKey = $this->emailKey($email);
         if ($this->limiter->tooManyAttempts($emailKey, self::MAX_EMAIL_ATTEMPTS)) {
+            ClinicalLog::event('auth.login.blocked', ['action' => 'account', 'error_code' => 'TOO_MANY_ATTEMPTS'], 'warning');
             throw new AuthDomainException('TOO_MANY_ATTEMPTS', 429,
                 'Se alcanzó el límite de intentos. Espera antes de volver a intentarlo.',
                 $this->limiter->availableIn($emailKey));

@@ -5,6 +5,7 @@ namespace App\Services\Notifications;
 use App\Exceptions\ClinicalOperationException;
 use App\Mail\AppointmentQrMail;
 use App\Services\Clinical\ClinicalRoleGuard;
+use App\Support\ClinicalLog;
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\ErrorCorrectionLevel;
 use Endroid\QrCode\Writer\PngWriter;
@@ -63,8 +64,10 @@ class AppointmentNotificationService
             [$code, $user->cod_usu],
         );
         if ($changed === 0) {
+            ClinicalLog::event('patient.notification.retry_rejected', ['entity_id' => $code], 'warning');
             throw new ClinicalOperationException(409, 'El correo ya fue procesado, está pendiente o agotó sus reintentos. Consulta las notificaciones.', 'CONFLICTO');
         }
+        ClinicalLog::afterCommit($this->db(), 'patient.notification.retry_requested', ['entity_id' => $code, 'actor_id' => $user->cod_usu]);
     }
 
     /** Envía únicamente la confirmación existente de una operación ya confirmada. */
@@ -161,6 +164,10 @@ class AppointmentNotificationService
             $this->db()->scalar('SELECT public.finalizar_notificacion(?,false,?)', [
                 $notice->id_notificacion, $safeError,
             ]);
+            ClinicalLog::event('notification.mail.failed', [
+                'entity_id' => $notice->cita, 'notification_id' => $notice->id_notificacion,
+                'exception_type' => $error::class,
+            ], 'warning');
 
             return 'errores';
         }
@@ -168,7 +175,7 @@ class AppointmentNotificationService
 
     private function deliver(object $notice): string
     {
-        return $this->db()->transaction(function (Connection $db) use ($notice): string {
+        $result = $this->db()->transaction(function (Connection $db) use ($notice): string {
             $current = $db->selectOne('SELECT estado FROM notificaciones WHERE cod_not=? FOR UPDATE', [$notice->id_notificacion]);
             if ($current?->estado !== 'EnProceso') {
                 return 'descartadas';
@@ -211,6 +218,14 @@ class AppointmentNotificationService
 
             return 'enviadas';
         });
+        if ($result === 'enviadas' && $notice->canal_salida === 'Email') {
+            ClinicalLog::afterCommit($this->db(), 'notification.mail.transport_accepted', [
+                'entity_id' => $notice->cita, 'notification_id' => $notice->id_notificacion,
+                'transport' => config('mail.mailers.'.config('mail.default').'.transport'),
+            ]);
+        }
+
+        return $result;
     }
 
     public function assertMailTransport(): void

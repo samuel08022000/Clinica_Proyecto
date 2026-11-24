@@ -5,6 +5,7 @@
 @section('breadcrumb')<a href="{{ route('administracion.'.$resource.'.index') }}">{{ $medical ? 'Médicos' : 'Secretarios' }}</a><span aria-hidden="true">/</span>{{ $code }}@endsection
 @section('admin_content')
     <x-admin.heading :title="$record['nombreCompleto']" :description="$code"><x-admin.button :href="route('administracion.'.$resource.'.edit', $code)">Editar datos</x-admin.button></x-admin.heading>
+    <div class="a-actions"><x-admin.button variant="secondary" :href="route('administracion.bitacoras.show', ['seccion' => $resource, 'persona' => $code])"><x-admin.icon name="history" />Ver bitácora</x-admin.button><x-admin.button variant="secondary" :href="route('administracion.bitacoras.profile-pdf', ['seccion' => $resource, 'codigo' => $code])"><x-admin.icon name="download" />Ficha PDF</x-admin.button></div>
     <section class="a-panel a-stack" aria-labelledby="profile-title">
         <h2 id="profile-title">Datos administrativos</h2>
         <dl class="a-details">

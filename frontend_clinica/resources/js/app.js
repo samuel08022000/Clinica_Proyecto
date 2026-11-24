@@ -1,4 +1,5 @@
 import './administracion';
+import './dashboard';
 import './secretaria';
 import './qr-checkin';
 import './qr-resend';

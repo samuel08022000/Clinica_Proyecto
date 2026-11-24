@@ -135,7 +135,7 @@ final class MedicoAtencionService
             $db->scalar('SELECT marcar_cita_atendida(?,?)', [$code, $user->cod_usu]);
 
             return $this->appointmentRow($db, $doctor['codMed'], $code);
-        });
+        }, 'doctor.appointment.finished', ['entity_id' => $code]);
     }
 
     public function specialties(): array

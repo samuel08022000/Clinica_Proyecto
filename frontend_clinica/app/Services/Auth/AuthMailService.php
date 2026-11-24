@@ -5,6 +5,7 @@ namespace App\Services\Auth;
 use App\Exceptions\AuthDomainException;
 use App\Mail\PasswordResetMail;
 use App\Mail\VerificationCodeMail;
+use App\Support\ClinicalLog;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\ConfigurationUrlParser;
 use Illuminate\Support\Facades\Log;
@@ -37,7 +38,12 @@ final class AuthMailService
     public function sendPasswordReset(string $email, string $url): void
     {
         $this->ensureTransport();
-        Mail::to($email)->send(new PasswordResetMail($url, $this->clinicalNow()->addMinutes(15)->format('H:i')));
+        try {
+            Mail::to($email)->send(new PasswordResetMail($url, $this->clinicalNow()->addMinutes(15)->format('H:i')));
+        } catch (TransportExceptionInterface $error) {
+            ClinicalLog::event('auth.password_reset.mail_failed', ['exception_type' => $error::class], 'warning');
+            throw $error;
+        }
     }
 
     private function containsNonDeliveryTransport(string $mailer, array $seen = []): bool

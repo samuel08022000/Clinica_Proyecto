@@ -309,7 +309,10 @@ class PatientPanelTest extends TestCase
         $date = now('America/La_Paz')->addDay()->format('Y-m-d');
         $this->appointments->shouldReceive('reschedule')->once()
             ->with('CIT0001', 'SLOT0001', 'Cambio de horario laboral')
+            ->globally()->ordered()
             ->andReturn($this->appointment('CIT0005'));
+        $this->notifications->shouldReceive('sendConfirmation')->once()->with('CIT0005')
+            ->globally()->ordered()->andReturn('Pendiente');
 
         $this->patient()->get(route('paciente.citas.reprogramar', [
             'cita' => 'CIT0001',

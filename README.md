@@ -80,6 +80,15 @@ Ejecutar desde la raíz del repositorio (`Proyecto Clinica/`):
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clinical\Invoke-Laravel.ps1 serve --host=127.0.0.1 --port=8000
     ```
+
+    **Si todas las páginas aparecen sin estilos:** revisar `frontend_clinica/public/hot`.
+    Cuando existe, Laravel carga CSS y JavaScript desde el servidor Vite indicado allí,
+    incluso si ya existe `public/build/manifest.json`. Mantener `npm.cmd run dev`
+    activo para ese modo. Si se usarán los recursos compilados, comprobar que Vite
+    está detenido y que los archivos del manifiesto existen; apartar únicamente el
+    archivo temporal `public/hot` obsoleto y recargar la página. No cambiar estilos,
+    layouts ni limpiar sesiones para corregir este problema.
+
     Para detener PostgreSQL 16 de forma segura (sin borrar volúmenes):
     ```powershell
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clinical\Stop-Database.ps1

@@ -86,7 +86,7 @@ final class MedicoDerivacionService
             );
 
             return $this->detailRow($db, $doctor['codMed'], (string) $code);
-        });
+        }, 'doctor.referral.processed', []);
     }
 
     public function listing(array $filters): array

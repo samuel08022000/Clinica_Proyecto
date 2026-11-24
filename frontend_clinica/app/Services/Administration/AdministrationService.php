@@ -7,10 +7,12 @@ use App\Services\Auth\SessionService;
 use App\Services\Clinical\ClinicalRoleGuard;
 use App\Services\Clinical\ClinicalSqlException;
 use App\Services\Clinical\ClinicalTransaction;
+use App\Support\ClinicalLog;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Hash;
+use Throwable;
 
 /** Casos de uso de Administración; conserva los contratos que consumen las vistas Blade. */
 class AdministrationService
@@ -24,14 +26,20 @@ class AdministrationService
 
     public function request(string $method, string $path, array $data = []): array
     {
-        $this->roles->require('ROL004');
         $method = strtoupper($method);
         $path = trim($path, '/');
 
         try {
+            $this->roles->require('ROL004');
+
             return $this->dispatch($method, $path, $data);
         } catch (QueryException $error) {
-            throw ClinicalSqlException::fromQuery($error);
+            $safeError = ClinicalSqlException::fromQuery($error);
+            ClinicalLog::failure('admin.operation', $safeError);
+            throw $safeError;
+        } catch (Throwable $error) {
+            ClinicalLog::failure('admin.operation', $error);
+            throw $error;
         }
     }
 
@@ -199,7 +207,7 @@ class AdministrationService
             $this->syncDoctorSpecialties($db, $row->cod_med, $data['codigosEspecialidades'] ?? [], (int) ($data['duracionConsultaMin'] ?? 30), []);
 
             return $row->cod_med;
-        });
+        }, 'admin.doctor.created', ['action' => 'create']);
 
         return $this->doctor($code);
     }
@@ -225,7 +233,7 @@ class AdministrationService
             if ($password) {
                 $revoke = $row->cod_usu;
             }
-        });
+        }, 'admin.doctor.updated', ['entity_id' => $code, 'action' => 'update']);
         if ($revoke) {
             $this->sessions->revokeAllForUser($revoke);
         }
@@ -246,7 +254,7 @@ class AdministrationService
             $db->update('UPDATE usuarios SET estado=?,actualizado_en=now() WHERE cod_usu=?', [$data['estado'], $row->cod_usu]);
 
             return $row->cod_usu;
-        });
+        }, 'admin.staff.status_changed', ['entity_id' => $code, 'action' => 'status']);
         if (($data['estado'] ?? null) === 'Inactivo') {
             $this->sessions->revokeAllForUser($user);
         }
@@ -280,7 +288,7 @@ class AdministrationService
             $user = $this->insertUser($db, $data, 'ROL002');
 
             return $db->selectOne('INSERT INTO secretarias(cod_usu,ci,telefono,estado) VALUES (?,NULLIF(?,\'\'),NULLIF(?,\'\'),\'Activo\') RETURNING cod_sec', [$user, $data['ci'] ?? '', $data['telefono'] ?? ''])->cod_sec;
-        });
+        }, 'admin.secretary.created', ['action' => 'create']);
 
         return $this->secretary($code);
     }
@@ -300,7 +308,7 @@ class AdministrationService
             if ($password) {
                 $revoke = $row->cod_usu;
             }
-        });
+        }, 'admin.secretary.updated', ['entity_id' => $code, 'action' => 'update']);
         if ($revoke) {
             $this->sessions->revokeAllForUser($revoke);
         }
@@ -320,7 +328,7 @@ class AdministrationService
             $db->update('UPDATE usuarios SET estado=?,actualizado_en=now() WHERE cod_usu=?', [$data['estado'], $row->cod_usu]);
 
             return $row->cod_usu;
-        });
+        }, 'admin.staff.status_changed', ['entity_id' => $code, 'action' => 'status']);
         if (($data['estado'] ?? null) === 'Inactivo') {
             $this->sessions->revokeAllForUser($user);
         }
@@ -339,7 +347,7 @@ class AdministrationService
             $db->update('UPDATE usuarios SET password_hash=?,actualizado_en=now() WHERE cod_usu=?', [Hash::make($data['password']), $row->cod_usu]);
 
             return $row->cod_usu;
-        });
+        }, 'admin.secretary.password_changed', ['entity_id' => $code, 'action' => 'password']);
         $this->sessions->revokeAllForUser($user);
 
         return $this->secretary($code);
@@ -402,7 +410,7 @@ class AdministrationService
             $db->selectOne("SELECT pg_advisory_xact_lock(hashtextextended('especialidades:' || lower(?),0))", [$name]);
 
             return $db->selectOne('INSERT INTO especialidades(nombre_especialidad,descripcion,duracion_consulta_min,estado) VALUES (?,NULLIF(?,\'\'),?,\'Activo\') RETURNING cod_esp', [$name, $data['descripcion'] ?? '', $data['duracionConsultaMin']])->cod_esp;
-        });
+        }, 'admin.specialty.changed', ['action' => 'create']);
 
         return $this->specialty($code);
     }
@@ -416,7 +424,7 @@ class AdministrationService
                 self::notFound('La especialidad solicitada no existe.');
             }
             $db->update('UPDATE especialidades SET nombre_especialidad=?,descripcion=NULLIF(?,\'\') WHERE cod_esp=?', [trim($data['nombreEspecialidad']), $data['descripcion'] ?? '', $code]);
-        });
+        }, 'admin.specialty.changed', ['entity_id' => $code, 'action' => 'update']);
 
         return $this->specialty($code);
     }
@@ -428,7 +436,7 @@ class AdministrationService
             if (! $db->update('UPDATE especialidades SET estado=? WHERE cod_esp=?', [$data['estado'], $code])) {
                 self::notFound('La especialidad solicitada no existe.');
             }
-        });
+        }, 'admin.specialty.changed', ['entity_id' => $code, 'action' => 'status']);
 
         return $this->specialty($code);
     }
@@ -450,7 +458,7 @@ class AdministrationService
             }
 
             return $db->selectOne('INSERT INTO horarios(cod_med,dia_semana,hora_inicio,hora_fin,pausa_inicio,pausa_fin,estado) VALUES (?,?,?,?,NULLIF(?,\'\')::time,NULLIF(?,\'\')::time,\'Activo\') RETURNING cod_hor', [$doctor, $data['diaSemana'], $data['horaInicio'], $data['horaFin'], $data['pausaInicio'] ?? '', $data['pausaFin'] ?? ''])->cod_hor;
-        });
+        }, 'admin.schedule.changed', ['action' => 'create']);
 
         return collect($this->schedules($doctor))->firstWhere('codHor', $code);
     }
@@ -467,7 +475,7 @@ class AdministrationService
             $db->update('UPDATE horarios SET dia_semana=?,hora_inicio=?,hora_fin=?,pausa_inicio=NULLIF(?,\'\')::time,pausa_fin=NULLIF(?,\'\')::time WHERE cod_hor=?', [$data['diaSemana'], $data['horaInicio'], $data['horaFin'], $data['pausaInicio'] ?? '', $data['pausaFin'] ?? '', $code]);
 
             return $row->cod_med;
-        });
+        }, 'admin.schedule.changed', ['entity_id' => $code, 'action' => 'update']);
 
         return collect($this->schedules($doctor))->firstWhere('codHor', $code);
     }
@@ -484,7 +492,7 @@ class AdministrationService
             $db->update('UPDATE horarios SET estado=? WHERE cod_hor=?', [$data['estado'], $code]);
 
             return $row->cod_med;
-        });
+        }, 'admin.schedule.changed', ['entity_id' => $code, 'action' => 'status']);
 
         return collect($this->schedules($doctor))->firstWhere('codHor', $code);
     }
@@ -498,7 +506,7 @@ class AdministrationService
                 self::notFound('El médico solicitado no existe.');
             }
             $db->update('UPDATE medico_especialidades SET duracion_consulta_min=? WHERE cod_med=? AND estado=\'Activo\'', [$data['duracionConsultaMin'], $doctor]);
-        });
+        }, 'admin.schedule.changed', ['entity_id' => $doctor, 'action' => 'duration']);
 
         return $this->doctor($doctor);
     }
@@ -527,7 +535,7 @@ class AdministrationService
             $db->selectOne('SELECT bloquear_agenda_medico(?)', [$doctor]);
 
             return $db->selectOne('INSERT INTO bloqueos_agenda(cod_med,cod_usu_admin,fecha_bloqueo,hora_inicio,hora_fin,motivo) VALUES (?,?,?,NULLIF(?,\'\')::time,NULLIF(?,\'\')::time,?) RETURNING cod_blo', [$doctor, $actor, $data['fechaBloqueo'], $data['horaInicio'] ?? '', $data['horaFin'] ?? '', trim($data['motivo'])])->cod_blo;
-        });
+        }, 'admin.block.created', ['action' => 'create']);
 
         return $this->block($code);
     }
@@ -616,7 +624,7 @@ class AdministrationService
             $this->assertAdmin($db);
 
             return $db->scalar('SELECT registrar_sancion(?,?,?,?)', [$patient, $actor, trim($data['motivo']), (int) $data['dias']]);
-        });
+        }, 'admin.sanction.changed', ['action' => 'create']);
 
         return $this->sanction($patient, $code);
     }

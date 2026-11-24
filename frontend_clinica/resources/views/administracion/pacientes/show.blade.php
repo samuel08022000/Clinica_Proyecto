@@ -3,6 +3,7 @@
 @section('breadcrumb')<a href="{{ route('administracion.pacientes.index') }}">Pacientes</a><span aria-hidden="true">/</span>{{ $record['codPac'] }}@endsection
 @section('admin_content')
     <x-admin.heading :title="$record['nombreCompleto']" :description="$record['codPac']"><x-admin.button :href="route('administracion.sanciones.create', $record['codPac'])">Aplicar sanción temporal</x-admin.button></x-admin.heading>
+    <div class="a-actions"><x-admin.button variant="secondary" :href="route('administracion.bitacoras.show', ['seccion' => 'pacientes', 'persona' => $record['codPac']])"><x-admin.icon name="history" />Ver bitácora</x-admin.button><x-admin.button variant="secondary" :href="route('administracion.bitacoras.profile-pdf', ['seccion' => 'pacientes', 'codigo' => $record['codPac']])"><x-admin.icon name="download" />Ficha PDF</x-admin.button></div>
     <section class="a-panel a-stack" aria-labelledby="booking-state-title"><h2 id="booking-state-title">Habilitación para reservar</h2>
         <div><x-admin.badge :value="$record['habilitadoParaReservar'] ? 'Habilitado' : 'Restringido'" /></div>
         <p>{{ $record['motivoInhabilitacion'] ?: 'Sin restricciones informadas por el servicio.' }}</p>

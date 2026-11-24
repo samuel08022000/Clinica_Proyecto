@@ -54,7 +54,7 @@ final class MedicoAnalisisService
             }
 
             return $this->detailRow($db, $doctor['codMed'], (string) $code);
-        });
+        }, 'doctor.analysis.request_processed', []);
     }
 
     public function listing(string $appointment): array
@@ -120,7 +120,7 @@ final class MedicoAnalisisService
             $db->update('UPDATE analisis SET estado=?,resultado=? WHERE cod_ana=?', [$state, $result, $code]);
 
             return $this->detailRow($db, $doctor['codMed'], $code);
-        });
+        }, 'doctor.analysis.status_changed', ['entity_id' => $code]);
     }
 
     private function detailRow(Connection $db, string $doctor, string $code): array

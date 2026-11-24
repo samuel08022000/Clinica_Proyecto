@@ -5,6 +5,7 @@ namespace App\Services\Auth;
 use App\Exceptions\AuthDomainException;
 use App\Models\Usuario;
 use App\Repositories\AuthAccountRepository;
+use App\Support\ClinicalLog;
 use Illuminate\Hashing\HashManager;
 use Illuminate\Http\Request;
 
@@ -39,11 +40,20 @@ final class AuthenticationService
         }
         if (! $user || ! $valid) {
             $this->attempts->failure($email, $ip);
+            ClinicalLog::event('auth.login.failed', ['error_code' => 'INVALID_CREDENTIALS'], 'warning');
             throw new AuthDomainException('INVALID_CREDENTIALS', 401, 'Correo o contraseña incorrectos.');
         }
-        $account = $this->status->requireActive($user->cod_usu);
+        try {
+            $account = $this->status->requireActive($user->cod_usu);
+        } catch (AuthDomainException $error) {
+            ClinicalLog::event('auth.login.failed', ['error_code' => $error->errorCode], 'warning');
+            throw $error;
+        }
         $this->attempts->success($email, $ip);
         $this->sessions->establish($request, $user, $account);
+        ClinicalLog::event('auth.login.success', [
+            'actor_id' => $user->cod_usu, 'role' => $account->cod_rol, 'action' => 'credentials',
+        ]);
 
         return $account;
     }
@@ -56,6 +66,9 @@ final class AuthenticationService
             throw new AuthDomainException('ACCOUNT_NOT_FOUND', 401, 'La cuenta no está disponible.');
         }
         $this->sessions->establish($request, $user, $account);
+        ClinicalLog::event('auth.login.success', [
+            'actor_id' => $user->cod_usu, 'role' => $account->cod_rol, 'action' => 'verified_identity',
+        ]);
 
         return $account;
     }

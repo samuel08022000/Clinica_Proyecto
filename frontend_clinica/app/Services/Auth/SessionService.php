@@ -3,6 +3,7 @@
 namespace App\Services\Auth;
 
 use App\Models\Usuario;
+use App\Support\ClinicalLog;
 use Illuminate\Auth\AuthManager;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Http\Request;
@@ -32,9 +33,13 @@ final class SessionService
 
     public function logout(Request $request): void
     {
+        $user = $this->auth->guard('web')->user();
         $this->auth->guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+        if ($user instanceof Usuario) {
+            ClinicalLog::event('auth.logout.success', ['actor_id' => $user->cod_usu, 'role' => $user->cod_rol]);
+        }
     }
 
     public function revokeAllForUser(string $userId): void

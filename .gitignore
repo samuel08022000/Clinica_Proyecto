@@ -8,6 +8,7 @@ boost.json
 
 # Credenciales locales de Docker; nunca se versionan.
 /.env
+/CONFIGURACION_FALTANTE_GIT.txt
 
 # Estado privado, respaldos y credenciales del PostgreSQL Laravel aislado.
 /.local/clinical-phase1/

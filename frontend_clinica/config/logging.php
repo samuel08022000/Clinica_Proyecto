@@ -54,7 +54,7 @@ return [
 
         'stack' => [
             'driver' => 'stack',
-            'channels' => explode(',', (string) env('LOG_STACK', 'single')),
+            'channels' => explode(',', (string) env('LOG_STACK', 'daily')),
             'ignore_exceptions' => false,
         ],
 
@@ -71,6 +71,17 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'max_files' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+        ],
+
+        // Boost respects an application-defined channel and reads daily files.
+        // Keep browser.log as historical data; new entries use browser-YYYY-MM-DD.log.
+        'browser' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/browser.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'max_files' => 14,
+            'permission' => 0600,
+            'locking' => true,
         ],
 
         'monthly' => [

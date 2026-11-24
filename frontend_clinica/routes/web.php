@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Administracion\AgendaController;
+use App\Http\Controllers\Administracion\BitacoraController;
 use App\Http\Controllers\Administracion\BloqueoController;
 use App\Http\Controllers\Administracion\ColaController;
 use App\Http\Controllers\Administracion\DashboardController;
@@ -184,5 +185,12 @@ Route::prefix('administracion')->name('administracion.')
         Route::post('/pacientes/{paciente}/sanciones', [SancionController::class, 'store'])->whereAlphaNumeric('paciente')->name('sanciones.store');
         Route::get('/pacientes/{paciente}/sanciones/{sancion}', [SancionController::class, 'show'])->whereAlphaNumeric(['paciente', 'sancion'])->name('sanciones.show');
         Route::get('/colas', [ColaController::class, 'index'])->name('colas.index');
+
+        Route::prefix('bitacoras')->name('bitacoras.')->controller(BitacoraController::class)->group(function (): void {
+            Route::get('/', 'index')->name('index');
+            Route::get('/{seccion}', 'show')->whereIn('seccion', ['pacientes', 'secretarias', 'medicos'])->name('show');
+            Route::get('/{seccion}/pdf', 'pdf')->whereIn('seccion', ['pacientes', 'secretarias', 'medicos'])->middleware('throttle:10,1')->name('pdf');
+            Route::get('/{seccion}/perfiles/{codigo}/pdf', 'profilePdf')->whereIn('seccion', ['pacientes', 'secretarias', 'medicos'])->whereAlphaNumeric('codigo')->middleware('throttle:10,1')->name('profile-pdf');
+        });
 
     });

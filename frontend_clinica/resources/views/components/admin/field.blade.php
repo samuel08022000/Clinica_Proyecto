@@ -3,6 +3,7 @@
     $id = $id ?? str_replace(['.', '[', ']'], '-', $name);
     $invalid = $showErrors && $errors->has($name);
     $current = $type === 'password' ? '' : old($name, $value);
+    $current = is_scalar($current) || $current === null ? $current : '';
     $described = trim(($help ? $id.'-help ' : '').($invalid ? $id.'-error' : ''));
 @endphp
 <div class="a-field">

@@ -198,7 +198,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
             );
 
             return $this->fetchOwnedDetail($db, $patient, $codCit);
-        });
+        }, 'patient.appointment.reserved', []);
     }
 
     public function cancel(string $appointmentCode, string $reason): array
@@ -213,7 +213,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
             $db->scalar('SELECT public.cancelar_cita(?, ?, ?)', [$code, $user->cod_usu, $motivo]);
 
             return $this->fetchOwnedDetail($db, $patient, $code);
-        });
+        }, 'patient.appointment.cancelled', ['entity_id' => $code]);
     }
 
     public function reschedule(string $appointmentCode, string $newSlotCode, string $reason): array
@@ -235,7 +235,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
             );
 
             return $this->fetchOwnedDetail($db, $patient, $newCodCit);
-        });
+        }, 'patient.appointment.rescheduled', ['previous_appointment_id' => $code]);
     }
 
     private function assertMutableConfirmed(Connection $db, string $code, string $codPac, string $actionVerb): void

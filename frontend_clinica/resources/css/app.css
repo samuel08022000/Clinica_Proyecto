@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 @import './administracion.css';
+@import './dashboard.css';
+@import './bitacoras.css';
 @import './secretaria.css';
 @import './medico.css';
 @import './paciente.css';

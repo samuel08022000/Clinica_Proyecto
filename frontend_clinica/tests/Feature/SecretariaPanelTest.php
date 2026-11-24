@@ -585,6 +585,9 @@ class SecretariaPanelTest extends TestCase
     #[DataProvider('invalidForms')]
     public function test_invalid_mutations_never_reach_clinical_service(string $path, array $input, string $field): void
     {
+        $notifications = app(AppointmentNotificationService::class);
+        $notifications->shouldNotReceive('sendConfirmation');
+        $notifications->shouldNotReceive('sendCheckinNotification');
         $this->secretary()->post($path, $input)->assertRedirect()->assertSessionHasErrors($field);
         $this->assertEmpty(array_filter($this->recorded, fn ($entry) => $entry['method'] !== 'GET'));
     }
@@ -647,6 +650,9 @@ class SecretariaPanelTest extends TestCase
     #[DataProvider('invalidWriteResponses')]
     public function test_unexpected_write_outcome_does_not_claim_success(string $path, array $input): void
     {
+        $notifications = app(AppointmentNotificationService::class);
+        $notifications->shouldNotReceive('sendConfirmation');
+        $notifications->shouldNotReceive('sendCheckinNotification');
         $this->override = fn () => ['codCit' => 'CIT00000001', 'estado' => 'Unexpected'];
         $this->secretary()->from('/secretaria/checkin')->post($path, $input)
             ->assertRedirect()->assertSessionMissing('success')->assertSessionHasErrors();
