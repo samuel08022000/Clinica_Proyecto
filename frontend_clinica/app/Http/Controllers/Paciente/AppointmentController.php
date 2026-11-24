@@ -94,13 +94,39 @@ final class AppointmentController extends Controller
 
     public function store(ReserveRequest $request): RedirectResponse
     {
-        $appointment = $this->appointments->reserve($request->validated('codSlot'));
-        $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
+        $slotCode = $request->validated('codSlot');
 
-        return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue confirmada. '.($mailState === 'Enviada'
-                ? 'El correo con tu pase QR fue aceptado por el transporte de correo.'
-                : 'El correo QR sigue pendiente; puedes solicitar su envío desde aquí.'));
+        try {
+            $appointment = $this->appointments->reserve($slotCode);
+            $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
+
+            Log::info('Cita reservada por paciente.', [
+                'codCit' => $appointment['codCit'],
+                'codSlot' => $slotCode,
+                'mailState' => $mailState,
+            ]);
+
+            return redirect()->route('paciente.citas.show', $appointment['codCit'])
+                ->with('success', 'Tu cita fue confirmada. '.($mailState === 'Enviada'
+                    ? 'El correo con tu pase QR fue aceptado por el transporte de correo.'
+                    : 'El correo QR sigue pendiente; puedes solicitar su envío desde aquí.'));
+        } catch (ClinicalOperationException $e) {
+            Log::warning('Conflicto de negocio al reservar cita de paciente.', [
+                'codSlot' => $slotCode,
+                'codigo' => $e->errorCode ?? 'CLINICAL_ERROR',
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        } catch (Throwable $e) {
+            Log::error('Error inesperado al reservar cita de paciente.', [
+                'codSlot' => $slotCode,
+                'exception' => $e::class,
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 
     public function show(Request $request, string $cita): View
@@ -114,7 +140,10 @@ final class AppointmentController extends Controller
                 $qrPng = $this->notifications->qrPng($pass['tokenQr']);
                 $qrBase64 = base64_encode($qrPng);
             } catch (Throwable $e) {
-                Log::warning('No se pudo renderizar el QR de la cita.', ['cita' => $cita]);
+                Log::warning('No se pudo renderizar el QR de la cita.', [
+                    'cita' => $cita,
+                    'mensaje' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -127,16 +156,44 @@ final class AppointmentController extends Controller
 
     public function cancel(CancelAppointmentRequest $request, string $cita): RedirectResponse
     {
-        $this->appointments->cancel($cita, $request->validated('motivo'));
+        $motivo = $request->validated('motivo');
 
-        return redirect()->route('paciente.citas', ['tab' => 'canceladas'])
-            ->with('success', 'Tu cita fue cancelada.');
+        try {
+            $this->appointments->cancel($cita, $motivo);
+
+            Log::info('Cita cancelada por paciente.', [
+                'codCit' => $cita,
+            ]);
+
+            return redirect()->route('paciente.citas', ['tab' => 'canceladas'])
+                ->with('success', 'Tu cita fue cancelada.');
+        } catch (ClinicalOperationException $e) {
+            Log::warning('No se pudo cancelar la cita del paciente por regla clínica.', [
+                'codCit' => $cita,
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        } catch (Throwable $e) {
+            Log::error('Error inesperado al cancelar cita del paciente.', [
+                'codCit' => $cita,
+                'exception' => $e::class,
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 
     public function editReschedule(BookingSearchRequest $request, string $cita): View
     {
         $appointment = $this->appointments->detail($cita);
         if (! $appointment['puedeReprogramar']) {
+            Log::warning('Intento de acceso a reprogramación no permitida.', [
+                'codCit' => $cita,
+                'estado' => $appointment['estado'] ?? null,
+            ]);
+
             throw new ClinicalOperationException(
                 409,
                 'La cita no puede reprogramarse en su estado actual.',
@@ -170,17 +227,43 @@ final class AppointmentController extends Controller
     public function reschedule(RescheduleAppointmentRequest $request, string $cita): RedirectResponse
     {
         $validated = $request->validated();
-        $appointment = $this->appointments->reschedule(
-            $cita,
-            $validated['codSlotNuevo'],
-            $validated['motivo'],
-        );
-        $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
 
-        return redirect()->route('paciente.citas.show', $appointment['codCit'])
-            ->with('success', 'Tu cita fue reprogramada. '.($mailState === 'Enviada'
-                ? 'El correo con tu nuevo pase QR fue aceptado por el transporte de correo.'
-                : 'El nuevo pase está disponible aquí; su correo sigue pendiente de envío.'));
+        try {
+            $appointment = $this->appointments->reschedule(
+                $cita,
+                $validated['codSlotNuevo'],
+                $validated['motivo'],
+            );
+            $mailState = $this->notifications->sendConfirmation($appointment['codCit']);
+
+            Log::info('Cita reprogramada por paciente.', [
+                'codCitAnterior' => $cita,
+                'codCitNueva' => $appointment['codCit'],
+                'codSlotNuevo' => $validated['codSlotNuevo'],
+                'mailState' => $mailState,
+            ]);
+
+            return redirect()->route('paciente.citas.show', $appointment['codCit'])
+                ->with('success', 'Tu cita fue reprogramada. '.($mailState === 'Enviada'
+                    ? 'El correo con tu nuevo pase QR fue aceptado por el transporte de correo.'
+                    : 'El nuevo pase está disponible aquí; su correo sigue pendiente de envío.'));
+        } catch (ClinicalOperationException $e) {
+            Log::warning('Conflicto de negocio al reprogramar cita de paciente.', [
+                'codCit' => $cita,
+                'codSlotNuevo' => $validated['codSlotNuevo'],
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        } catch (Throwable $e) {
+            Log::error('Error inesperado al reprogramar cita de paciente.', [
+                'codCit' => $cita,
+                'exception' => $e::class,
+                'mensaje' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 
     /** @return array<string, mixed> */
