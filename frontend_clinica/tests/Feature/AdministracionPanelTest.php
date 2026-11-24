@@ -6,11 +6,13 @@ use App\Exceptions\AuthDomainException;
 use App\Exceptions\ClinicalOperationException;
 use App\Models\Usuario;
 use App\Services\Administration\AdministrationService;
+use App\Services\Administration\DashboardService;
 use App\Services\Auth\AccountStatusService;
 use Illuminate\Database\QueryException;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\AdministrativeFixtures as F;
+use Tests\Support\DashboardFixtures;
 use Tests\TestCase;
 
 class AdministracionPanelTest extends TestCase
@@ -85,6 +87,10 @@ class AdministracionPanelTest extends TestCase
             return ['codBlo' => 'BLO000001'];
         });
         $this->app->instance(AdministrationService::class, $adminService);
+
+        $dashboard = Mockery::mock(DashboardService::class);
+        $dashboard->shouldReceive('snapshot')->andReturn(DashboardFixtures::snapshot());
+        $this->app->instance(DashboardService::class, $dashboard);
     }
 
     public static function blockReasonBoundaries(): array

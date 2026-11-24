@@ -14,17 +14,16 @@ use App\Services\Paciente\PatientSupport;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Log;
 use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use Tests\TestCase;
+use RuntimeException;
+use Tests\Support\MockeryIsolationTestCase;
 
-final class PatientAppointmentUnitTest extends TestCase
+final class PatientAppointmentUnitTest extends MockeryIsolationTestCase
 {
-    use MockeryPHPUnitIntegration;
-
     /**
      * @template T of FormRequest
-     * @param class-string<T> $requestClass
-     * @param array<string, mixed> $payload
+     *
+     * @param  class-string<T>  $requestClass
+     * @param  array<string, mixed>  $payload
      * @return T
      */
     private function makeValidatedRequest(string $requestClass, array $payload): FormRequest
@@ -47,7 +46,8 @@ final class PatientAppointmentUnitTest extends TestCase
     {
         $appointmentsMock = Mockery::mock(PatientAppointmentManager::class);
         $availabilityMock = Mockery::mock(PatientAvailabilityProvider::class);
-        $notifications = $this->app->make(AppointmentNotificationService::class);
+        $notifications = Mockery::mock(AppointmentNotificationService::class);
+        $notifications->shouldReceive('sendConfirmation')->once()->with('CIT001')->andReturn('Enviada');
 
         $appointmentsMock->shouldReceive('reserve')
             ->once()
@@ -76,7 +76,8 @@ final class PatientAppointmentUnitTest extends TestCase
     {
         $appointmentsMock = Mockery::mock(PatientAppointmentManager::class);
         $availabilityMock = Mockery::mock(PatientAvailabilityProvider::class);
-        $notifications = $this->app->make(AppointmentNotificationService::class);
+        $notifications = Mockery::mock(AppointmentNotificationService::class);
+        $notifications->shouldNotReceive('sendConfirmation');
 
         $appointmentsMock->shouldReceive('reserve')
             ->once()
@@ -105,7 +106,8 @@ final class PatientAppointmentUnitTest extends TestCase
     {
         $appointmentsMock = Mockery::mock(PatientAppointmentManager::class);
         $availabilityMock = Mockery::mock(PatientAvailabilityProvider::class);
-        $notifications = $this->app->make(AppointmentNotificationService::class);
+        $notifications = Mockery::mock(AppointmentNotificationService::class);
+        $notifications->shouldNotReceive('sendConfirmation');
 
         $appointmentsMock->shouldReceive('cancel')
             ->once()
@@ -135,7 +137,8 @@ final class PatientAppointmentUnitTest extends TestCase
     {
         $appointmentsMock = Mockery::mock(PatientAppointmentManager::class);
         $availabilityMock = Mockery::mock(PatientAvailabilityProvider::class);
-        $notifications = $this->app->make(AppointmentNotificationService::class);
+        $notifications = Mockery::mock(AppointmentNotificationService::class);
+        $notifications->shouldReceive('sendConfirmation')->once()->with('CIT002')->andReturn('Enviada');
 
         $appointmentsMock->shouldReceive('reschedule')
             ->once()
@@ -160,6 +163,26 @@ final class PatientAppointmentUnitTest extends TestCase
 
         $this->assertSame(302, $response->getStatusCode());
         $this->assertStringContainsString('CIT002', $response->getTargetUrl());
+    }
+
+    public function test_error_inesperado_no_expone_datos_privados_en_el_log(): void
+    {
+        $error = new RuntimeException('PRIVATE_SQL_AND_PASSWORD_SENTINEL');
+        $appointments = Mockery::mock(PatientAppointmentManager::class);
+        $appointments->shouldReceive('reserve')->once()->with('SLOT001')->andThrow($error);
+        $availability = Mockery::mock(PatientAvailabilityProvider::class);
+        $notifications = Mockery::mock(AppointmentNotificationService::class);
+        $notifications->shouldNotReceive('sendConfirmation');
+        Log::shouldReceive('error')->once()->with('Error inesperado al reservar cita de paciente.', [
+            'codSlot' => 'SLOT001',
+            'exception' => RuntimeException::class,
+        ]);
+
+        $request = $this->makeValidatedRequest(ReserveRequest::class, ['codSlot' => 'SLOT001']);
+        $controller = new AppointmentController($appointments, $availability, $notifications);
+
+        $this->expectExceptionObject($error);
+        $controller->store($request);
     }
 
     public function test_validaciones_unitarias_de_patient_support(): void

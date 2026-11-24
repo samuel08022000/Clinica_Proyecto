@@ -114,7 +114,7 @@ final class AppointmentController extends Controller
             Log::warning('Conflicto de negocio al reservar cita de paciente.', [
                 'codSlot' => $slotCode,
                 'codigo' => $e->errorCode ?? 'CLINICAL_ERROR',
-                'mensaje' => $e->getMessage(),
+                'tipo' => $e::class,
             ]);
 
             throw $e;
@@ -122,7 +122,6 @@ final class AppointmentController extends Controller
             Log::error('Error inesperado al reservar cita de paciente.', [
                 'codSlot' => $slotCode,
                 'exception' => $e::class,
-                'mensaje' => $e->getMessage(),
             ]);
 
             throw $e;
@@ -142,7 +141,7 @@ final class AppointmentController extends Controller
             } catch (Throwable $e) {
                 Log::warning('No se pudo renderizar el QR de la cita.', [
                     'cita' => $cita,
-                    'mensaje' => $e->getMessage(),
+                    'tipo' => $e::class,
                 ]);
             }
         }
@@ -170,7 +169,7 @@ final class AppointmentController extends Controller
         } catch (ClinicalOperationException $e) {
             Log::warning('No se pudo cancelar la cita del paciente por regla clínica.', [
                 'codCit' => $cita,
-                'mensaje' => $e->getMessage(),
+                'tipo' => $e::class,
             ]);
 
             throw $e;
@@ -178,7 +177,6 @@ final class AppointmentController extends Controller
             Log::error('Error inesperado al cancelar cita del paciente.', [
                 'codCit' => $cita,
                 'exception' => $e::class,
-                'mensaje' => $e->getMessage(),
             ]);
 
             throw $e;
@@ -251,7 +249,7 @@ final class AppointmentController extends Controller
             Log::warning('Conflicto de negocio al reprogramar cita de paciente.', [
                 'codCit' => $cita,
                 'codSlotNuevo' => $validated['codSlotNuevo'],
-                'mensaje' => $e->getMessage(),
+                'tipo' => $e::class,
             ]);
 
             throw $e;
@@ -259,7 +257,6 @@ final class AppointmentController extends Controller
             Log::error('Error inesperado al reprogramar cita de paciente.', [
                 'codCit' => $cita,
                 'exception' => $e::class,
-                'mensaje' => $e->getMessage(),
             ]);
 
             throw $e;
