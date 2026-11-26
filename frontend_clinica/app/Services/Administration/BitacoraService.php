@@ -32,7 +32,7 @@ class BitacoraService
         'duracion_consulta_min' => 'Duración de consulta (min)', 'canal_reserva' => 'Canal de reserva',
         'cod_esp' => 'Especialidad', 'cod_med' => 'Médico', 'cod_sec' => 'Secretario',
         'hora_llegada_checkin' => 'Llegada registrada', 'checkin_por_usu' => 'Llegada registrada por',
-        'fecha_atencion' => 'Atención finalizada', 'atendida_por_usu' => 'Atendida por',
+        'hora_inicio_atencion' => 'Inicio de atención', 'fecha_atencion' => 'Atención finalizada', 'atendida_por_usu' => 'Atendida por',
         'cancelado_por_usu' => 'Cancelada por', 'tipo_incidencia' => 'Tipo de incidencia',
         'fecha_fin_sancion' => 'Fin de sanción', 'cod_esp_destino' => 'Especialidad de destino',
         'cod_med_destino' => 'Médico de destino', 'cod_cit_hija' => 'Cita de destino', 'cod_cit_padre' => 'Cita de origen',
@@ -198,7 +198,7 @@ class BitacoraService
         if (! is_scalar($value)) {
             return 'Valor no disponible';
         }
-        if (is_string($value) && in_array($field, ['bloqueado_hasta', 'hora_llegada_checkin', 'fecha_atencion', 'fecha_fin_sancion'], true)) {
+        if (is_string($value) && in_array($field, ['bloqueado_hasta', 'hora_llegada_checkin', 'hora_inicio_atencion', 'fecha_atencion', 'fecha_fin_sancion'], true)) {
             return (new DateTimeImmutable($value))->setTimezone(new DateTimeZone('America/La_Paz'))->format('d/m/Y H:i');
         }
 

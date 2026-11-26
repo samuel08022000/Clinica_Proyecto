@@ -437,7 +437,7 @@ class AdministracionPanelTest extends TestCase
     {
         $this->override = fn (string $m, string $path) => $path === '/personal/medicos' ? [] : null;
         $this->admin()->get('/administracion/medicos')->assertOk()->assertSee('No se encontraron médicos')->assertSee('Registrar médico');
-        $this->get('/administracion/inicio')->assertOk()->assertSee('Médicos activos')->assertDontSee('+12%');
+        $this->get('/administracion/inicio?vista=gestion')->assertOk()->assertSee('Médicos activos')->assertDontSee('+12%');
     }
 
     public function test_failed_password_reset_does_not_leak_password_into_session_input(): void

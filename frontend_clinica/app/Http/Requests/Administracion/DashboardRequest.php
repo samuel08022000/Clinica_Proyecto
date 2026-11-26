@@ -5,13 +5,14 @@ namespace App\Http\Requests\Administracion;
 use DateTimeImmutable;
 use Illuminate\Validation\Validator;
 
-class DashboardRequest extends AdminRequest
+class DashboardRequest extends ColaAnalisisRequest
 {
     protected $redirectRoute = 'administracion.home';
 
     public function rules(): array
     {
-        return [
+        return array_intersect_key(parent::rules(), array_flip(['especialidad', 'medico'])) + [
+            'vista' => ['sometimes', 'required', 'string', 'in:hoy,analisis,gestion'],
             'periodo' => ['sometimes', 'required', 'string', 'in:hoy,semana,mes,personalizado'],
             'desde' => ['bail', 'exclude_unless:periodo,personalizado', 'required', 'date_format:Y-m-d'],
             'hasta' => ['bail', 'exclude_unless:periodo,personalizado', 'required', 'date_format:Y-m-d', 'after_or_equal:desde'],
@@ -43,6 +44,6 @@ class DashboardRequest extends AdminRequest
 
     public function attributes(): array
     {
-        return ['periodo' => 'período', 'desde' => 'fecha inicial', 'hasta' => 'fecha final'];
+        return ['periodo' => 'período', 'desde' => 'fecha inicial', 'hasta' => 'fecha final'] + parent::attributes();
     }
 }

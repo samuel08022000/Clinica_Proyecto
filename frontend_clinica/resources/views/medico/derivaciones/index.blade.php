@@ -11,12 +11,12 @@
     @if(count($page['derivaciones']))
         <x-admin.table :headings="['Derivación', 'Paciente y origen', 'Destino', 'Programación', 'Estado', 'Acción']" caption="Derivaciones emitidas">
             @foreach($page['derivaciones'] as $item)<tr>
-                <td>{{ $item['codDer'] }}<small>{{ $item['fechaDerivacion'] }}</small></td>
-                <td>{{ $item['nombrePaciente'] }}<small>{{ $item['codCitOrigen'] }}</small></td>
-                <td>{{ $item['nombreEspecialidad'] }}<small>{{ $item['nombreMedicoDestino'] ?? 'Sin destinatario específico' }}</small></td>
-                <td>{{ $item['codCitHija'] ?? 'Pendiente de cita hija' }}</td>
-                <td><x-admin.badge :value="$item['estado']" /></td>
-                <td><a href="{{ route('medico.derivaciones.show', $item['codDer']) }}" aria-label="Ver detalle de derivación {{ $item['codDer'] }}">Ver detalle</a></td>
+                <td data-label="Derivación">{{ $item['codDer'] }}<small>{{ $item['fechaDerivacion'] }}</small></td>
+                <td data-label="Paciente y origen">{{ $item['nombrePaciente'] }}<small>{{ $item['codCitOrigen'] }}</small></td>
+                <td data-label="Destino">{{ $item['nombreEspecialidad'] }}<small>{{ $item['nombreMedicoDestino'] ?? 'Sin destinatario específico' }}</small></td>
+                <td data-label="Programación">{{ $item['codCitHija'] ?? 'Pendiente de cita hija' }}</td>
+                <td data-label="Estado"><x-admin.badge :value="$item['estado']" /></td>
+                <td data-label="Acción"><a href="{{ route('medico.derivaciones.show', $item['codDer']) }}" aria-label="Ver detalle de derivación {{ $item['codDer'] }}">Ver detalle</a></td>
             </tr>@endforeach
         </x-admin.table>
     @else

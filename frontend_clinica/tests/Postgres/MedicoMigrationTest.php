@@ -5,6 +5,7 @@ namespace Tests\Postgres;
 use App\Exceptions\ClinicalOperationException;
 use App\Models\Usuario;
 use App\Services\Administration\AdministrationService;
+use App\Services\Administration\DashboardService;
 use App\Services\Medico\MedicoAnalisisService;
 use App\Services\Medico\MedicoAtencionService;
 use App\Services\Medico\MedicoDerivacionService;
@@ -84,18 +85,43 @@ final class MedicoMigrationTest extends TestCase
         $confirmed = $this->book($fixture, 1, 0);
         $this->login($fixture['doctorA']['codUsu']);
         $service = app(MedicoAtencionService::class);
+        $this->expectDomain(409, fn () => $service->start($confirmed['codCit']));
         $this->expectDomain(409, fn () => $service->finish($confirmed['codCit']));
 
         $waiting = $this->checkedIn($fixture, $this->book($fixture, 1, 1));
+        $dashboard = app(DashboardService::class);
+        $doctorCode = $fixture['doctorA']['codMed'];
+        $filters = ['periodo' => 'personalizado', 'desde' => $waiting['fecha'], 'hasta' => $waiting['fecha'], 'medico' => $doctorCode];
+        $this->login($fixture['admin']);
+        $this->assertSame(1, $dashboard->snapshot($filters)['queues']['espera_actual']['por_medico'][$doctorCode]['total']);
         $this->login($fixture['doctorB']['codUsu']);
+        $this->expectDomain(404, fn () => $service->start($waiting['codCit']));
         $this->expectDomain(404, fn () => $service->finish($waiting['codCit']));
         $this->login($fixture['doctorA']['codUsu']);
+        $this->expectDomain(409, fn () => $service->finish($waiting['codCit']));
+        $started = $service->start($waiting['codCit']);
+        $this->assertNotNull($started['horaInicioAtencion']);
+        $this->assertNull($started['fechaAtencion']);
+        $this->expectDomain(409, fn () => $service->start($waiting['codCit']));
+        $this->login($fixture['admin']);
+        $queue = $dashboard->snapshot($filters)['queues']['espera_actual']['por_medico'][$doctorCode];
+        $this->assertSame(0, $queue['total']);
+        $this->assertSame(1, $queue['en_atencion']);
+        $this->login($fixture['patientUser']);
+        $this->assertSame([$waiting['codCit']], array_column(app(PatientAppointmentService::class)->list(['estado' => 'En Atención'])['citas'], 'codCit'));
+        $this->login($fixture['doctorA']['codUsu']);
         $finished = $service->finish($waiting['codCit']);
+        $this->assertSame($started['horaInicioAtencion'], $finished['horaInicioAtencion']);
         $this->assertSame('Atendida', $finished['estado']);
         $this->assertSame($fixture['doctorA']['codUsu'], $finished['atendidaPorUsu']);
         $this->assertNotNull($finished['fechaAtencion']);
         $this->expectDomain(409, fn () => $service->finish($waiting['codCit']));
+        $this->login($fixture['admin']);
+        $queues = $dashboard->snapshot($filters)['queues'];
+        $this->assertArrayNotHasKey($doctorCode, $queues['espera_actual']['por_medico']);
+        $this->assertSame(1, $queues['resumen_global']['observado']['muestra_consulta']);
         $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM bitacora WHERE nombre_tabla='citas' AND clave_registro=? AND cod_usu=? AND datos_nuevos->>'estado'='Atendida'", [$waiting['codCit'], $fixture['doctorA']['codUsu']]));
+        $this->assertSame(1, (int) $this->scalar("SELECT count(*) FROM bitacora WHERE nombre_tabla='citas' AND clave_registro=? AND cod_usu=? AND datos_anteriores->>'hora_inicio_atencion' IS NULL AND datos_nuevos->>'hora_inicio_atencion' IS NOT NULL", [$waiting['codCit'], $fixture['doctorA']['codUsu']]));
     }
 
     #[Test]
@@ -241,6 +267,12 @@ final class MedicoMigrationTest extends TestCase
     {
         $fixture = $this->medicalFixture();
         $waiting = $this->checkedIn($fixture, $this->book($fixture, 1, 0));
+        $start = $this->concurrent([
+            ['operation' => 'start', 'actor' => $fixture['doctorA']['codUsu'], 'code' => $waiting['codCit']],
+            ['operation' => 'start', 'actor' => $fixture['doctorA']['codUsu'], 'code' => $waiting['codCit']],
+        ]);
+        $this->assertCount(1, array_filter($start, fn (array $result): bool => $result['ok']));
+        $this->assertContains(409, array_column($start, 'status'));
         $finish = $this->concurrent([
             ['operation' => 'finish', 'actor' => $fixture['doctorA']['codUsu'], 'code' => $waiting['codCit']],
             ['operation' => 'finish', 'actor' => $fixture['doctorA']['codUsu'], 'code' => $waiting['codCit']],
@@ -287,6 +319,11 @@ final class MedicoMigrationTest extends TestCase
         $doctorBSession = $this->authSession($fixture['doctorB']['codUsu']);
 
         $this->login($fixture['doctorA']['codUsu']);
+        $this->withSession($doctorASession)
+            ->post('/medico/citas/'.$waiting['codCit'].'/iniciar')
+            ->assertRedirect('/medico/citas/'.$waiting['codCit']);
+        $this->withSession($doctorASession)
+            ->get('/medico/citas/'.$waiting['codCit'])->assertOk()->assertSee('En Atención');
         $this->withSession($doctorASession)
             ->post('/medico/citas/'.$waiting['codCit'].'/atender', ['confirmacion' => '1'])
             ->assertRedirect('/medico/citas/'.$waiting['codCit']);
@@ -401,7 +438,7 @@ final class MedicoMigrationTest extends TestCase
         $this->assertNull($db->scalar('SELECT actor_actual()'));
         $this->assertSame(21, (int) $db->scalar("SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history'"));
         $this->assertSame(2, (int) $db->scalar("SELECT count(*) FROM pg_views WHERE schemaname='public'"));
-        $this->assertSame(42, (int) $db->scalar("SELECT count(*) FROM pg_proc p WHERE pronamespace='public'::regnamespace AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e')"));
+        $this->assertSame(44, (int) $db->scalar("SELECT count(*) FROM pg_proc p WHERE pronamespace='public'::regnamespace AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e')"));
     }
 
     #[Test]
@@ -423,6 +460,7 @@ final class MedicoMigrationTest extends TestCase
         $this->assertSame($fixture['secretary']['codUsu'], $this->scalar("SELECT cod_usu FROM bitacora WHERE nombre_tabla='derivaciones' AND clave_registro=? ORDER BY secuencial DESC LIMIT 1", [$second['codDer']]));
         $this->checkedIn($fixture, $child);
         $this->login($fixture['doctorB']['codUsu']);
+        app(MedicoAtencionService::class)->start($child['codCit']);
         app(MedicoAtencionService::class)->finish($child['codCit']);
         $this->assertSame('Completada', $this->scalar('SELECT estado FROM derivaciones WHERE cod_der=?', [$first['codDer']]));
         $this->assertSame($fixture['doctorB']['codUsu'], $this->scalar("SELECT cod_usu FROM bitacora WHERE nombre_tabla='derivaciones' AND clave_registro=? ORDER BY secuencial DESC LIMIT 1", [$first['codDer']]));
@@ -555,6 +593,8 @@ final class MedicoMigrationTest extends TestCase
     {
         $waiting = $this->checkedIn($fixture, $appointment);
         $this->login($fixture['doctorA']['codUsu']);
+
+        app(MedicoAtencionService::class)->start($waiting['codCit']);
 
         return app(MedicoAtencionService::class)->finish($waiting['codCit']);
     }

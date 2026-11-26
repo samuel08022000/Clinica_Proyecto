@@ -14,14 +14,14 @@ class DashboardService
     public function __construct(
         private DatabaseManager $database,
         private ClinicalRoleGuard $roles,
+        private ColaMetricaService $queues,
     ) {}
 
     /**
-     * Todas las agregaciones comparten un único snapshot de PostgreSQL.
-     * Las citas se filtran por fecha programada; los registros y las derivaciones,
-     * por fecha de creación en America/La_Paz. No carga listados paginados ni datos personales.
+     * Las citas históricas se filtran por fecha programada. La sala de espera
+     * tiene su propia captura operativa en America/La_Paz.
      *
-     * @param  array{periodo?: string, desde?: ?string, hasta?: ?string}  $filters
+     * @param  array{periodo?: string, desde?: ?string, hasta?: ?string, especialidad?: ?string, medico?: ?string}  $filters
      */
     public function snapshot(array $filters = []): array
     {
@@ -41,7 +41,9 @@ class DashboardService
                 WITH limites AS (
                     SELECT ?::date AS desde, ?::date AS hasta, ?::date AS hoy
                 ), citas_periodo AS MATERIALIZED (
-                    SELECT c.cod_pac, c.cod_esp, c.fecha, c.estado, c.canal_reserva
+                    SELECT c.cod_pac, c.cod_esp, c.fecha, c.canal_reserva,
+                        CASE WHEN c.estado='En Espera' AND c.hora_inicio_atencion IS NOT NULL
+                             THEN 'En Atención' ELSE c.estado END AS estado
                     FROM citas c CROSS JOIN limites l
                     WHERE c.fecha BETWEEN l.desde AND l.hasta
                 )
@@ -60,9 +62,11 @@ class DashboardService
                             p.creado_en < ((l.hasta+1)::timestamp AT TIME ZONE 'America/La_Paz')),
                         'appointments', (SELECT count(*) FROM citas_periodo),
                         'attendedPatients', (SELECT count(DISTINCT cod_pac) FROM citas_periodo WHERE estado='Atendida'),
-                        'todayAppointments', (SELECT count(*) FROM citas WHERE fecha=l.hoy AND estado <> 'Reprogramada'),
-                        'todayAttended', (SELECT count(*) FROM citas WHERE fecha=l.hoy AND estado='Atendida'),
-                        'todayWaiting', (SELECT count(*) FROM citas WHERE fecha=l.hoy AND estado='En Espera')
+                        'todayAppointments', (SELECT count(*) FROM citas WHERE fecha=l.hoy
+                            AND estado IN ('Confirmada','En Espera','Atendida','No Asistió')),
+                        'todayAttended', (SELECT count(DISTINCT cod_pac) FROM citas WHERE estado='Atendida'
+                            AND fecha_atencion >= (l.hoy::timestamp AT TIME ZONE 'America/La_Paz')
+                            AND fecha_atencion < ((l.hoy+1)::timestamp AT TIME ZONE 'America/La_Paz'))
                     ),
                     'daily', (SELECT coalesce(json_agg(d ORDER BY d.date), '[]'::json) FROM (
                         SELECT fecha AS date, count(DISTINCT cod_pac) AS value
@@ -101,6 +105,7 @@ class DashboardService
                 'Confirmada' => 'Confirmadas', 'En Espera' => 'En espera', 'Atendida' => 'Atendidas',
                 'Cancelada' => 'Canceladas', 'No Asistió' => 'No asistió',
                 'Afectada/Pendiente Reprogramación' => 'Pendientes de reprogramar', 'Reprogramada' => 'Reprogramadas',
+                'En Atención' => 'En atención',
             ]);
             $data['channels'] = $this->distribution($data['channels'], [
                 'Web' => 'Web', 'Ventanilla' => 'Ventanilla', 'Derivacion' => 'Derivación', 'Admin' => 'Administración',
@@ -112,6 +117,13 @@ class DashboardService
                 'preset' => $preset, 'from' => $from->format('Y-m-d'), 'to' => $to->format('Y-m-d'),
                 'today' => $today->format('d/m/Y'), 'label' => $from->format('d/m/Y').' – '.$to->format('d/m/Y'),
             ];
+            $data['queues'] = $this->queues->resumenDashboard([
+                'fecha_inicio' => $data['period']['from'],
+                'fecha_fin' => $data['period']['to'],
+                'especialidad' => $filters['especialidad'] ?? null,
+                'medico' => $filters['medico'] ?? null,
+            ]);
+            $data['totals']['todayWaiting'] = $data['queues']['espera_actual']['global']['total'];
 
             return $data;
         } catch (QueryException $error) {

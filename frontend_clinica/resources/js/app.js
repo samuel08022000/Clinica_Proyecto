@@ -75,32 +75,6 @@ if (revealItems.length > 0) {
     }
 }
 
-const bookingDays = document.querySelector('[data-booking-days]');
-if (bookingDays) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/La_Paz',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(new Date());
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    const baseDate = new Date(Date.UTC(Number(value.year), Number(value.month) - 1, Number(value.day)));
-    const dayFormatter = new Intl.DateTimeFormat('es-BO', { weekday: 'short', timeZone: 'UTC' });
-    const dateFormatter = new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: 'UTC' });
-
-    bookingDays.querySelectorAll('li').forEach((item, index) => {
-        const date = new Date(baseDate);
-        date.setUTCDate(baseDate.getUTCDate() + index);
-        const label = item.querySelector('span');
-        const dateValue = item.querySelector('strong');
-
-        if (label && dateValue) {
-            label.textContent = index === 0 ? 'Hoy' : dayFormatter.format(date).replace('.', '');
-            dateValue.textContent = dateFormatter.format(date).replace('.', '');
-        }
-    });
-}
-
 const stageImage = document.querySelector('[data-stage-image]');
 const heroTitle = document.querySelector('#portal-title');
 

@@ -22,6 +22,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
                c.motivo_reprogramacion AS "motivoReprogramacion",
                c.cancelado_en AS "canceladoEn",
                c.hora_llegada_checkin AS "horaLlegadaCheckin",
+               c.hora_inicio_atencion AS "horaInicioAtencion",
                c.fecha_atencion AS "fechaAtencion",
                c.cod_cit_padre AS "codCitPadre",
                c.creado_en AS "creadoEn",
@@ -70,6 +71,7 @@ final class PatientAppointmentService implements PatientAppointmentManager
                        c.motivo_reprogramacion AS "motivoReprogramacion",
                        h.cancelado_en AS "canceladoEn",
                        h.hora_llegada_checkin AS "horaLlegadaCheckin",
+                       c.hora_inicio_atencion AS "horaInicioAtencion",
                        h.fecha_atencion AS "fechaAtencion",
                        c.cod_cit_padre AS "codCitPadre",
                        h.creado_en AS "creadoEn",
@@ -82,14 +84,19 @@ final class PatientAppointmentService implements PatientAppointmentManager
             $bindings = [$patient['codPac']];
 
             if ($scope === 'proximas') {
-                $sql .= " AND (h.estado='Afectada/Pendiente Reprogramación' OR (h.estado IN ('Confirmada', 'En Espera') AND (h.fecha + h.hora_fin) > ahora_clinica()))";
+                $sql .= " AND (h.estado IN ('En Espera', 'Afectada/Pendiente Reprogramación') OR (h.estado='Confirmada' AND (h.fecha + h.hora_fin) > ahora_clinica()))";
             } elseif ($scope === 'pasadas') {
-                $sql .= " AND h.estado<>'Afectada/Pendiente Reprogramación' AND (h.estado NOT IN ('Confirmada', 'En Espera') OR (h.fecha + h.hora_fin) <= ahora_clinica())";
+                $sql .= " AND h.estado NOT IN ('En Espera', 'Afectada/Pendiente Reprogramación') AND (h.estado<>'Confirmada' OR (h.fecha + h.hora_fin) <= ahora_clinica())";
             }
 
             if (filled($filters['estado'] ?? null)) {
-                $sql .= ' AND h.estado=?';
-                $bindings[] = PatientSupport::text($filters['estado'], 40, 'estado');
+                $state = PatientSupport::text($filters['estado'], 40, 'estado');
+                $sql .= match ($state) {
+                    'En Espera' => ' AND h.estado=? AND c.hora_inicio_atencion IS NULL',
+                    'En Atención' => ' AND h.estado=? AND c.hora_inicio_atencion IS NOT NULL',
+                    default => ' AND h.estado=?',
+                };
+                $bindings[] = $state === 'En Atención' ? 'En Espera' : $state;
             }
             if ($from !== null) {
                 $sql .= ' AND h.fecha>=?';

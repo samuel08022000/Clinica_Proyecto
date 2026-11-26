@@ -7,10 +7,16 @@ $dependencies = Invoke-ClinicalSql "SELECT count(*) FROM pg_proc WHERE pronamesp
 if ($dependencies -ne '3') { throw 'Las funciones clínicas vigentes no corresponden al contrato esperado.' }
 $baselineSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/migration/B9__instalacion_sin_datos_demo.sql') -Raw -Encoding UTF8
 $upgradeSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V11__permisos_notificaciones.sql') -Raw -Encoding UTF8
-foreach ($functionName in @('tomar_notificaciones', 'procesar_evento_cita', 'reprogramar_cita')) {
+$attendanceSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V14__inicio_real_atencion.sql') -Raw -Encoding UTF8
+$reminderSql = Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V15__vigencia_recordatorios.sql') -Raw -Encoding UTF8
+foreach ($functionName in @('tomar_notificaciones', 'procesar_evento_cita', 'reprogramar_cita', 'marcar_cita_atendida')) {
     $originalSql = if ($functionName -eq 'reprogramar_cita') { Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/migration/V10__derivaciones_recepcion_enlazadas.sql') -Raw -Encoding UTF8 } else { $baselineSql }
     $knownSources = @($originalSql, $upgradeSql)
-    if ($functionName -eq 'procesar_evento_cita') { $knownSources += Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V13__avisar_llegada_en_espera.sql') -Raw -Encoding UTF8 }
+    if ($functionName -eq 'marcar_cita_atendida') { $knownSources = @($baselineSql, $attendanceSql) }
+    if ($functionName -eq 'procesar_evento_cita') {
+        $knownSources += Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V13__avisar_llegada_en_espera.sql') -Raw -Encoding UTF8
+        $knownSources += $reminderSql
+    }
     $knownHashes = foreach ($sourceSql in $knownSources) {
         $body = [regex]::Match($sourceSql, "CREATE OR REPLACE FUNCTION public\.$functionName\(.*?AS \`$\`$(.*?)\`$\`$;", 'Singleline').Groups[1].Value.Replace("`r`n", "`n")
         if (!$body) { throw 'No se pudo verificar la definición SQL versionada.' }
@@ -26,5 +32,7 @@ $immediateFile = if ($Rollback) { 'U12__envio_inmediato_qr.sql' } else { 'V12__e
 $null = Invoke-ClinicalSql (Get-Content -LiteralPath (Join-Path $ClinicalRoot "database_clinica/upgrade/$immediateFile") -Raw -Encoding UTF8) $targetDatabase
 if (!$Rollback) {
     $null = Invoke-ClinicalSql (Get-Content -LiteralPath (Join-Path $ClinicalRoot 'database_clinica/upgrade/V13__avisar_llegada_en_espera.sql') -Raw -Encoding UTF8) $targetDatabase
+    $null = Invoke-ClinicalSql $attendanceSql $targetDatabase
+    $null = Invoke-ClinicalSql $reminderSql $targetDatabase
 }
 Write-Output "${targetDatabase}: migración de notificaciones y derivaciones $(if ($Rollback) {'revertida'} else {'aplicada'}); historiales conservados."

@@ -155,10 +155,10 @@
 
             <article class="queue-kpi queue-kpi--live">
                 <dl>
-                    <dt>En sala de espera hoy (Real)</dt>
+                    <dt>En sala de espera actual (Real)</dt>
                     <dd class="a-number">{{ $resumen_global['en_espera_hoy'] }}</dd>
                 </dl>
-                <small>Citas en estado «En Espera» el {{ $fecha_clinica_hoy }}</small>
+                <small>Captura {{ $espera_actual['actualizado'] ?? $fecha_clinica_hoy }} · Bolivia</small>
             </article>
         </div>
     </section>
@@ -264,12 +264,32 @@
         @endif
     </section>
 
-    {{-- Tabla 2: Análisis por Médico (Modelo M/M/1 — Teórico vs. Real) --}}
+    @if(isset($resumen_global['observado']))
+        @php($observado = $resumen_global['observado'])
+        <section class="a-stack" aria-labelledby="observado-title">
+            <div>
+                <h2 id="observado-title">Tiempos teóricos y observados</h2>
+                <p class="a-muted a-small">Cada promedio usa las citas con las marcas necesarias. La duración programada usa las mismas consultas que la duración real.</p>
+            </div>
+            <div class="queue-table-wrap">
+                <x-admin.table :headings="['Medición', 'Modelo o agenda', 'Promedio observado', 'Muestra']" caption="Comparación de tiempos del período y ámbito seleccionados">
+                    @foreach([
+                        ['Espera (check-in → inicio)', $resumenMetricas['wq_minutos'], $observado['espera'], $observado['muestra_espera'], $resumenMetricas['estado']],
+                        ['Tiempo total (check-in → cierre)', $resumenMetricas['w_minutos'], $observado['total'], $observado['muestra_total'], $resumenMetricas['estado']],
+                        ['Duración de consulta (inicio → cierre)', $observado['programada'], $observado['consulta'], $observado['muestra_consulta'], ''],
+                    ] as [$medicion, $referencia, $real, $muestra, $estado])
+                        <tr><th scope="row">{{ $medicion }}</th><td class="a-numeric">{{ $fmtCola($referencia, $estado, 1, ' min') }}</td><td class="a-numeric">{{ $real === null ? 'Sin muestra' : number_format($real, 1, '.', '').' min' }}</td><td class="a-numeric">{{ $muestra }}</td></tr>
+                    @endforeach
+                </x-admin.table>
+            </div>
+        </section>
+    @endif
+
     <section class="a-stack" aria-labelledby="colas-medicos-title">
         <div>
             <h2 id="colas-medicos-title">Análisis por médico (Modelo M/M/1 — Teórico vs. Real)</h2>
             <p class="a-muted a-small">
-                La base clínica registra el check-in (<code>hora_llegada_checkin</code>) y el cierre de consulta (<code>fecha_atencion</code>), sin marca separada de inicio de consulta. Por ello, el promedio real observado corresponde al <strong>tiempo total real en clínica (W empírico: Check-in → Cierre)</strong> y se compara con <strong>W teórico</strong>.
+                El <strong>W empírico: Check-in → Cierre</strong> conserva la serie histórica de atenciones con tiempos entre 0 y 12 horas. La espera observada usa el inicio real de consulta.
             </p>
         </div>
 
@@ -281,7 +301,7 @@
         @else
             <div class="queue-table-wrap">
                 <x-admin.table
-                    :headings="['Médico', 'Especialidad', 'Duración', 'Llegadas', 'λ (pac/h)', 'μ (pac/h)', 'Utilización ρ', 'Wq teórico', 'W teórico', 'W empírico real (Check-in → Cierre)', 'En espera hoy', 'Diagnóstico']"
+                    :headings="['Médico', 'Especialidad', 'Duración', 'Llegadas', 'λ (pac/h)', 'μ (pac/h)', 'Utilización ρ', 'Wq teórico', 'W teórico', 'W empírico real (Check-in → Cierre)', 'En espera actual', 'Diagnóstico']"
                     caption="Análisis individual por médico usando modelo M/M/1 comparado con el tiempo total real en clínica"
                 >
                     @foreach($por_medico as $fila)
@@ -292,12 +312,20 @@
                                 <small>{{ $fila['cod_med'] }} · {{ $etiquetaBaseHoras($fila['base_horas'], $fila['horas_efectivas']) }}</small>
                             </td>
                             <td>{{ $fila['especialidades_texto'] }}</td>
-                            <td class="a-numeric">{{ $fila['duracion_minutos'] }} min</td>
+                            <td class="a-numeric">{{ $fila['duracion_minutos'] }} min
+                                @if(($fila['observado']['consulta'] ?? null) !== null)
+                                    <small>Real {{ number_format($fila['observado']['consulta'], 1) }} min · n = {{ $fila['observado']['muestra_consulta'] }}</small>
+                                @endif
+                            </td>
                             <td class="a-numeric">{{ $fila['llegadas'] }}</td>
                             <td class="a-numeric">{{ number_format($m['lambda'], 2, '.', '') }}</td>
                             <td class="a-numeric">{{ number_format($m['mu'], 2, '.', '') }}</td>
                             <td class="a-numeric">{{ $fmtRho($m['rho_porcentaje'], $m['estado']) }}</td>
-                            <td class="a-numeric">{{ $fmtCola($m['wq_minutos'], $m['estado'], 1, ' min') }}</td>
+                            <td class="a-numeric">{{ $fmtCola($m['wq_minutos'], $m['estado'], 1, ' min') }}
+                                @if(($fila['observado']['espera'] ?? null) !== null)
+                                    <small>Real {{ number_format($fila['observado']['espera'], 1) }} min · n = {{ $fila['observado']['muestra_espera'] }}</small>
+                                @endif
+                            </td>
                             <td class="a-numeric">{{ $fmtCola($m['w_minutos'], $m['estado'], 1, ' min') }}</td>
                             <td class="a-numeric">
                                 @if($fila['w_empirico_minutos'] !== null)

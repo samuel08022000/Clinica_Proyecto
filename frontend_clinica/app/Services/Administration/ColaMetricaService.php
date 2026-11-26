@@ -9,6 +9,7 @@ use DateTimeImmutable;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Date;
 
 /**
  * Servicio de solo lectura para análisis de Teoría de Colas (M/M/1 y M/M/c).
@@ -416,6 +417,16 @@ class ColaMetricaService
      */
     public function obtenerDatosPanel(array $filtros): array
     {
+        return $this->consultarPanel($filtros, true);
+    }
+
+    public function resumenDashboard(array $filtros): array
+    {
+        return $this->consultarPanel($filtros, false);
+    }
+
+    private function consultarPanel(array $filtros, bool $avanzado): array
+    {
         $this->roles->require('ROL004');
 
         try {
@@ -444,7 +455,11 @@ class ColaMetricaService
             $horarios = $this->consultarHorariosActivos($db);
             $bloqueos = $this->consultarBloqueosEnRango($db, $fechaInicio, $fechaFin);
             $citasDiarias = $this->consultarCitasDiarias($db, $fechaInicio, $fechaFin, $especialidadFiltro, $medicoFiltro);
-            $esperaHoyRows = $this->consultarEnEsperaHoy($db, $fechaHoy, $especialidadFiltro, $medicoFiltro);
+            $espera = $this->consultarEsperaActual(
+                $db,
+                $avanzado ? $especialidadFiltro : null,
+                $avanzado ? $medicoFiltro : null,
+            );
 
             return $this->ensamblarPanel(
                 $fechaHoy,
@@ -458,8 +473,9 @@ class ColaMetricaService
                 $horarios,
                 $bloqueos,
                 $citasDiarias,
-                $esperaHoyRows,
+                $espera,
                 $filtros,
+                $avanzado,
             );
         } catch (QueryException $error) {
             throw ClinicalSqlException::fromQuery($error);
@@ -472,8 +488,7 @@ class ColaMetricaService
      * @param  list<array{cod_med: string, cod_esp: string, duracion_vinculo: ?int, estado_vinculo: string, nombre_especialidad: string, duracion_especialidad: int, estado_especialidad: string}>  $vinculos
      * @param  list<array{cod_med: string, dia_semana: int, hora_inicio: string, hora_fin: string, pausa_inicio: ?string, pausa_fin: ?string}>  $horarios
      * @param  list<array{cod_med: string, fecha_bloqueo: string, hora_inicio: ?string, hora_fin: ?string}>  $bloqueos
-     * @param  list<array{cod_esp: string, cod_med: string, fecha: string, llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float}>  $citasDiarias
-     * @param  list<array{cod_esp: string, cod_med: string, en_espera: int}>  $esperaHoyRows
+     * @param  list<array<string, mixed>>  $citasDiarias
      * @param  array<string, mixed>  $filtros
      * @return array<string, mixed>
      */
@@ -489,8 +504,9 @@ class ColaMetricaService
         array $horarios,
         array $bloqueos,
         array $citasDiarias,
-        array $esperaHoyRows,
+        array $espera,
         array $filtros,
+        bool $avanzado,
     ): array {
         $especialidadesPorCodigo = [];
         foreach ($especialidades as $esp) {
@@ -541,19 +557,10 @@ class ColaMetricaService
             }
         }
 
-        $esperaHoyGlobal = 0;
-        $esperaHoyPorEspecialidad = [];
-        $esperaHoyPorMedico = [];
-        foreach ($esperaHoyRows as $filaEspera) {
-            $cantidad = (int) $filaEspera['en_espera'];
-            $esperaHoyGlobal += $cantidad;
-            $esperaHoyPorEspecialidad[$filaEspera['cod_esp']] = ($esperaHoyPorEspecialidad[$filaEspera['cod_esp']] ?? 0) + $cantidad;
-            $esperaHoyPorMedico[$filaEspera['cod_med']] = ($esperaHoyPorMedico[$filaEspera['cod_med']] ?? 0) + $cantidad;
-        }
-
         $agregadoGlobal = $this->iniciarAgregado();
         $agregadoPorEspecialidad = [];
         $agregadoPorMedico = [];
+        $esperaPorFecha = [];
         foreach ($citasDiarias as $filaCita) {
             $codEsp = $filaCita['cod_esp'];
             $codMed = $filaCita['cod_med'];
@@ -566,6 +573,11 @@ class ColaMetricaService
                 $agregadoPorMedico[$codMed] ?? $this->iniciarAgregado(),
                 $filaCita,
             );
+            if ($filaCita['muestra_espera'] > 0) {
+                $fecha = $filaCita['fecha'];
+                $esperaPorFecha[$fecha]['muestra'] = ($esperaPorFecha[$fecha]['muestra'] ?? 0) + $filaCita['muestra_espera'];
+                $esperaPorFecha[$fecha]['suma'] = ($esperaPorFecha[$fecha]['suma'] ?? 0) + $filaCita['suma_espera'];
+            }
         }
 
         $porEspecialidad = [];
@@ -635,7 +647,8 @@ class ColaMetricaService
                 'base_horas' => $baseHoras,
                 'mu_promedio' => $muPromedio,
                 'duracion_sugerida' => $duracionSugerida,
-                'en_espera_hoy' => $esperaHoyPorEspecialidad[$codEsp] ?? 0,
+                'en_espera_hoy' => $espera['por_especialidad'][$codEsp]['total'] ?? 0,
+                'observado' => $this->resumenObservado($stats),
                 'w_empirico_minutos' => $this->promedioEmpirico($stats),
                 'muestra_empirica' => $stats['muestra_empirica'],
                 'metricas' => $metricas,
@@ -698,13 +711,15 @@ class ColaMetricaService
                 'cod_med' => $codMed,
                 'nombre' => $med['nombre_completo'],
                 'estado_medico' => $med['estado_medico'],
+                'habilitado' => $med['habilitado'],
                 'especialidades_texto' => $nombresEspecialidades !== [] ? implode(', ', array_unique($nombresEspecialidades)) : 'Sin especialidad activa',
                 'duracion_minutos' => $duracionMin,
                 'llegadas' => $stats['llegadas'],
                 'atendidas' => $stats['atendidas'],
                 'horas_efectivas' => $horasEfectivas,
                 'base_horas' => $baseHoras,
-                'en_espera_hoy' => $esperaHoyPorMedico[$codMed] ?? 0,
+                'en_espera_hoy' => $espera['por_medico'][$codMed]['total'] ?? 0,
+                'observado' => $this->resumenObservado($stats),
                 'w_empirico_minutos' => $this->promedioEmpirico($stats),
                 'muestra_empirica' => $stats['muestra_empirica'],
                 'metricas' => $metricas,
@@ -719,20 +734,23 @@ class ColaMetricaService
             $porEspecialidad,
             $porMedico,
             $agregadoGlobal,
-            $esperaHoyGlobal,
+            $espera['global']['total'],
             $horasProgramadasPorMedico,
         );
 
-        $alertas = $this->construirAlertas($porEspecialidad, $porMedico);
+        $resumenGlobal['observado'] = $this->resumenObservado($agregadoGlobal);
+        ksort($esperaPorFecha);
+        $evolucion = [];
+        foreach ($esperaPorFecha as $fecha => $datos) {
+            $evolucion[] = [
+                'date' => $fecha,
+                'label' => (new DateTimeImmutable($fecha))->format('d/m'),
+                'value' => $datos['suma'] / $datos['muestra'],
+                'sample' => $datos['muestra'],
+            ];
+        }
 
-        $parametrosSim = $this->resolverParametrosSimulador($filtros, $resumenGlobal, $especialidades);
-        $simulacion = $this->simularEscenariosComparativos(
-            $parametrosSim['lambda'],
-            $parametrosSim['duracion'],
-            $parametrosSim['servidores'],
-        );
-
-        return [
+        $panel = [
             'fecha_clinica_hoy' => $fechaHoy,
             'filtros_aplicados' => [
                 'fecha_inicio' => $fechaInicio,
@@ -756,10 +774,45 @@ class ColaMetricaService
             'resumen_global' => $resumenGlobal,
             'por_especialidad' => $porEspecialidad,
             'por_medico' => $porMedico,
-            'alertas' => $alertas,
-            'simulacion' => $simulacion,
+            'espera_actual' => $espera,
+            'evolucion_espera' => $evolucion,
+        ];
+
+        if (! $avanzado) {
+            $panel['medicos_espera'] = array_values(array_filter($medicosPorCodigo, static fn (array $m): bool => $m['habilitado'] || ($espera['por_medico'][$m['cod_med']]['total'] ?? 0) > 0));
+            $panel['por_medico'] = array_values(array_filter($porMedico, static fn (array $m): bool => $m['habilitado']));
+            foreach (['por_medico', 'por_especialidad'] as $dimension) {
+                foreach ($panel[$dimension] as &$fila) {
+                    $fila['utilizacion'] = $this->utilizacionDashboard($fila['metricas'], $fila['base_horas'], $fila['llegadas']);
+                }
+                unset($fila);
+            }
+            $panel['resumen_global']['utilizacion'] = $this->utilizacionDashboard(
+                $resumenGlobal['metricas'], $resumenGlobal['base_horas'], $resumenGlobal['total_llegadas'],
+            );
+
+            return $panel;
+        }
+
+        $parametrosSim = $this->resolverParametrosSimulador($filtros, $resumenGlobal, $especialidades);
+
+        return $panel + [
+            'alertas' => $this->construirAlertas($porEspecialidad, $porMedico),
+            'simulacion' => $this->simularEscenariosComparativos(
+                $parametrosSim['lambda'], $parametrosSim['duracion'], $parametrosSim['servidores'],
+            ),
             'simulacion_es_referencia' => $parametrosSim['es_referencia'],
         ];
+    }
+
+    private function utilizacionDashboard(array $metricas, string $baseHoras, int $llegadas): array
+    {
+        return match (true) {
+            $metricas['capacidad_total'] <= self::EPSILON, $baseHoras === 'sin_horarios' => ['valor' => null, 'estado' => 'sin_capacidad', 'etiqueta' => 'Sin capacidad programada'],
+            $baseHoras === 'respaldo_8h' => ['valor' => null, 'estado' => 'sin_datos', 'etiqueta' => 'Información de horarios insuficiente'],
+            $llegadas === 0 => ['valor' => 0.0, 'estado' => 'sin_demanda', 'etiqueta' => 'Sin demanda observada'],
+            default => ['valor' => $metricas['rho_porcentaje'], 'estado' => $metricas['estado'], 'etiqueta' => $metricas['etiqueta']],
+        };
     }
 
     /**
@@ -1189,7 +1242,7 @@ class ColaMetricaService
     }
 
     /**
-     * @return array{llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float, fechas: array<string, bool>}
+     * @return array<string, int|float|array>
      */
     private function iniciarAgregado(): array
     {
@@ -1198,14 +1251,21 @@ class ColaMetricaService
             'atendidas' => 0,
             'muestra_empirica' => 0,
             'suma_w_empirico_min' => 0.0,
+            'muestra_espera' => 0,
+            'suma_espera' => 0.0,
+            'muestra_consulta' => 0,
+            'suma_consulta' => 0.0,
+            'suma_programada' => 0.0,
+            'muestra_total' => 0,
+            'suma_total' => 0.0,
             'fechas' => [],
         ];
     }
 
     /**
-     * @param  array{llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float, fechas: array<string, bool>}  $base
-     * @param  array{fecha: string, llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float}  $fila
-     * @return array{llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float, fechas: array<string, bool>}
+     * @param  array<string, mixed>  $base
+     * @param  array<string, mixed>  $fila
+     * @return array<string, mixed>
      */
     private function acumularAgregado(array $base, array $fila): array
     {
@@ -1214,6 +1274,9 @@ class ColaMetricaService
         $base['atendidas'] += (int) $fila['atendidas'];
         $base['muestra_empirica'] += (int) $fila['muestra_empirica'];
         $base['suma_w_empirico_min'] += (float) $fila['suma_w_empirico_min'];
+        foreach (['muestra_espera', 'suma_espera', 'muestra_consulta', 'suma_consulta', 'suma_programada', 'muestra_total', 'suma_total'] as $indicador) {
+            $base[$indicador] += $fila[$indicador];
+        }
         if ($llegadas > 0) {
             $base['fechas'][(string) $fila['fecha']] = true;
         }
@@ -1231,6 +1294,22 @@ class ColaMetricaService
         }
 
         return $stats['suma_w_empirico_min'] / $stats['muestra_empirica'];
+    }
+
+    private function resumenObservado(array $stats): array
+    {
+        $promedio = static fn (string $suma, string $muestra): ?float => $stats[$muestra] > 0
+            ? $stats[$suma] / $stats[$muestra] : null;
+
+        return [
+            'espera' => $promedio('suma_espera', 'muestra_espera'),
+            'muestra_espera' => $stats['muestra_espera'],
+            'consulta' => $promedio('suma_consulta', 'muestra_consulta'),
+            'programada' => $promedio('suma_programada', 'muestra_consulta'),
+            'muestra_consulta' => $stats['muestra_consulta'],
+            'total' => $promedio('suma_total', 'muestra_total'),
+            'muestra_total' => $stats['muestra_total'],
+        ];
     }
 
     private function tiempoASegundos(string $tiempo): int
@@ -1421,7 +1500,7 @@ class ColaMetricaService
     }
 
     /**
-     * @return list<array{cod_esp: string, cod_med: string, fecha: string, llegadas: int, atendidas: int, muestra_empirica: int, suma_w_empirico_min: float}>
+     * @return list<array<string, string|int|float>>
      */
     private function consultarCitasDiarias(
         Connection $db,
@@ -1430,11 +1509,13 @@ class ColaMetricaService
         ?string $especialidad,
         ?string $medico,
     ): array {
-        $sql = "SELECT c.cod_esp, c.cod_med, c.fecha::text AS fecha,
+        $sql = <<<'SQL'
+                SELECT c.cod_esp, c.cod_med, c.fecha::text AS fecha,
                        COUNT(*) AS llegadas,
                        COUNT(*) FILTER (WHERE c.estado = 'Atendida') AS atendidas,
                        COUNT(*) FILTER (
                            WHERE c.estado = 'Atendida'
+                             AND isfinite(c.hora_llegada_checkin) AND isfinite(c.fecha_atencion)
                              AND c.hora_llegada_checkin IS NOT NULL
                              AND c.fecha_atencion IS NOT NULL
                              AND c.fecha_atencion >= c.hora_llegada_checkin
@@ -1442,14 +1523,39 @@ class ColaMetricaService
                        ) AS muestra_empirica,
                        COALESCE(SUM(EXTRACT(EPOCH FROM (c.fecha_atencion - c.hora_llegada_checkin)) / 60.0) FILTER (
                            WHERE c.estado = 'Atendida'
+                             AND isfinite(c.hora_llegada_checkin) AND isfinite(c.fecha_atencion)
                              AND c.hora_llegada_checkin IS NOT NULL
                              AND c.fecha_atencion IS NOT NULL
                              AND c.fecha_atencion >= c.hora_llegada_checkin
                              AND EXTRACT(EPOCH FROM (c.fecha_atencion - c.hora_llegada_checkin)) <= 43200
-                       ), 0) AS suma_w_empirico_min
-                FROM public.citas c
-                WHERE c.fecha BETWEEN ? AND ?
-                  AND (c.estado IN ('En Espera', 'Atendida') OR c.hora_llegada_checkin IS NOT NULL)";
+                       ), 0) AS suma_w_empirico_min,
+                       COUNT(espera) AS muestra_espera, COALESCE(SUM(espera), 0) AS suma_espera,
+                       COUNT(consulta) AS muestra_consulta, COALESCE(SUM(consulta), 0) AS suma_consulta,
+                       COALESCE(SUM(programada) FILTER (WHERE consulta IS NOT NULL), 0) AS suma_programada,
+                       COUNT(total) AS muestra_total, COALESCE(SUM(total), 0) AS suma_total
+                FROM (
+                    SELECT cod_esp, cod_med, fecha, estado, hora_llegada_checkin, fecha_atencion,
+                        CASE WHEN estado IN ('En Espera', 'Atendida')
+                              AND isfinite(hora_llegada_checkin) AND isfinite(hora_inicio_atencion)
+                              AND hora_inicio_atencion >= hora_llegada_checkin
+                              AND hora_inicio_atencion <= statement_timestamp()
+                              AND (fecha_atencion IS NULL OR fecha_atencion >= hora_inicio_atencion)
+                             THEN EXTRACT(EPOCH FROM (hora_inicio_atencion - hora_llegada_checkin)) / 60 END AS espera,
+                        CASE WHEN estado = 'Atendida' AND fecha_atencion >= hora_inicio_atencion
+                              AND isfinite(hora_inicio_atencion) AND isfinite(fecha_atencion)
+                              AND fecha_atencion <= statement_timestamp()
+                              AND (hora_llegada_checkin IS NULL OR hora_inicio_atencion >= hora_llegada_checkin)
+                             THEN EXTRACT(EPOCH FROM (fecha_atencion - hora_inicio_atencion)) / 60 END AS consulta,
+                        EXTRACT(EPOCH FROM (hora_fin - hora_inicio)) / 60 AS programada,
+                        CASE WHEN estado = 'Atendida' AND fecha_atencion >= hora_llegada_checkin
+                              AND isfinite(hora_llegada_checkin) AND isfinite(fecha_atencion)
+                              AND fecha_atencion <= statement_timestamp()
+                             THEN EXTRACT(EPOCH FROM (fecha_atencion - hora_llegada_checkin)) / 60 END AS total
+                    FROM public.citas
+                    WHERE fecha BETWEEN ? AND ?
+                ) c
+                WHERE (c.estado IN ('En Espera', 'Atendida') OR c.hora_llegada_checkin IS NOT NULL)
+                SQL;
 
         $bindings = [$fechaInicio, $fechaFin];
         if ($especialidad !== null) {
@@ -1473,41 +1579,83 @@ class ColaMetricaService
             'atendidas' => (int) $r->atendidas,
             'muestra_empirica' => (int) $r->muestra_empirica,
             'suma_w_empirico_min' => (float) $r->suma_w_empirico_min,
+            'muestra_espera' => (int) $r->muestra_espera,
+            'suma_espera' => (float) $r->suma_espera,
+            'muestra_consulta' => (int) $r->muestra_consulta,
+            'suma_consulta' => (float) $r->suma_consulta,
+            'suma_programada' => (float) $r->suma_programada,
+            'muestra_total' => (int) $r->muestra_total,
+            'suma_total' => (float) $r->suma_total,
         ], $rows);
     }
 
-    /**
-     * @return list<array{cod_esp: string, cod_med: string, en_espera: int}>
-     */
-    private function consultarEnEsperaHoy(
+    private function consultarEsperaActual(
         Connection $db,
-        string $fechaHoy,
         ?string $especialidad,
         ?string $medico,
     ): array {
-        $sql = "SELECT c.cod_esp, c.cod_med, COUNT(*) AS en_espera
-                FROM public.citas c
-                WHERE c.estado = 'En Espera'
-                  AND c.fecha = ?";
-
-        $bindings = [$fechaHoy];
+        $meta = max(1, (int) config('app.wait_target_minutes'));
+        $demoraElevada = max($meta, (int) config('app.wait_high_delay_minutes'));
+        $captura = Date::now('America/La_Paz');
+        $bindings = [$meta * 60, $demoraElevada * 60, $captura->format('Y-m-d H:i:s.uP')];
+        $filtros = '';
         if ($especialidad !== null) {
-            $sql .= ' AND c.cod_esp = ?';
+            $filtros .= ' AND c.cod_esp = ?';
             $bindings[] = $especialidad;
         }
         if ($medico !== null) {
-            $sql .= ' AND c.cod_med = ?';
+            $filtros .= ' AND c.cod_med = ?';
             $bindings[] = $medico;
         }
 
-        $sql .= ' GROUP BY c.cod_esp, c.cod_med';
+        $rows = $db->select(<<<SQL
+            WITH limites AS (SELECT ?::numeric AS meta, ?::numeric AS elevada, ?::timestamptz AS captura),
+            sala AS (
+                SELECT c.cod_med, c.cod_esp, c.hora_inicio_atencion IS NOT NULL AS en_atencion,
+                    CASE WHEN c.hora_inicio_atencion IS NULL AND c.checkin_por_usu IS NOT NULL
+                              AND isfinite(c.hora_llegada_checkin)
+                              AND c.hora_llegada_checkin <= captura
+                         THEN EXTRACT(EPOCH FROM (captura - c.hora_llegada_checkin))
+                    END AS segundos
+                FROM public.citas c CROSS JOIN limites
+                WHERE c.estado = 'En Espera'{$filtros}
+            )
+            SELECT cod_med, cod_esp,
+                COUNT(*) FILTER (WHERE NOT en_atencion) AS total,
+                COUNT(*) FILTER (WHERE en_atencion) AS en_atencion,
+                COUNT(segundos) AS validos,
+                COUNT(*) FILTER (WHERE segundos <= meta) AS dentro,
+                COUNT(*) FILTER (WHERE segundos > meta AND segundos <= elevada) AS moderada,
+                COUNT(*) FILTER (WHERE segundos > elevada) AS elevada,
+                AVG(segundos) / 60 AS promedio, MAX(segundos) / 60 AS maximo
+            FROM sala CROSS JOIN limites
+            GROUP BY GROUPING SETS ((), (cod_med), (cod_esp))
+            SQL, $bindings);
 
-        $rows = $db->select($sql, $bindings);
+        $resultado = ['meta' => $meta, 'demora_elevada' => $demoraElevada, 'actualizado' => $captura->format('d/m/Y H:i:s'), 'por_medico' => [], 'por_especialidad' => []];
+        foreach ($rows as $r) {
+            $fila = [
+                'total' => (int) $r->total,
+                'en_atencion' => (int) $r->en_atencion,
+                'validos' => (int) $r->validos,
+                'sin_tiempo' => (int) $r->total - (int) $r->validos,
+                'dentro' => (int) $r->dentro,
+                'fuera' => (int) $r->moderada + (int) $r->elevada,
+                'moderada' => (int) $r->moderada,
+                'elevada' => (int) $r->elevada,
+                'porcentaje' => (int) $r->validos > 0 ? 100.0 * $r->dentro / $r->validos : null,
+                'promedio' => $r->promedio === null ? null : (float) $r->promedio,
+                'maximo' => $r->maximo === null ? null : (float) $r->maximo,
+            ];
+            if ($r->cod_med !== null) {
+                $resultado['por_medico'][$r->cod_med] = $fila;
+            } elseif ($r->cod_esp !== null) {
+                $resultado['por_especialidad'][$r->cod_esp] = $fila;
+            } else {
+                $resultado['global'] = $fila;
+            }
+        }
 
-        return array_map(static fn (object $r): array => [
-            'cod_esp' => (string) $r->cod_esp,
-            'cod_med' => (string) $r->cod_med,
-            'en_espera' => (int) $r->en_espera,
-        ], $rows);
+        return $resultado;
     }
 }

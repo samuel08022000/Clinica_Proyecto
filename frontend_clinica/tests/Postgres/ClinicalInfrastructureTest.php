@@ -47,7 +47,7 @@ final class ClinicalInfrastructureTest extends TestCase
         $this->assertSame(['btree_gist', 'pgcrypto'], $this->owner->query("SELECT extname FROM pg_extension WHERE extname IN ('btree_gist','pgcrypto') ORDER BY extname")->fetchAll(PDO::FETCH_COLUMN));
         $definitions = [];
         $triggers = [];
-        foreach (['B9__instalacion_sin_datos_demo.sql', 'V10__derivaciones_recepcion_enlazadas.sql', 'R__verificacion_email_otp.sql', '../upgrade/V11__permisos_notificaciones.sql', '../upgrade/V13__avisar_llegada_en_espera.sql'] as $file) {
+        foreach (['B9__instalacion_sin_datos_demo.sql', 'V10__derivaciones_recepcion_enlazadas.sql', 'R__verificacion_email_otp.sql', '../upgrade/V11__permisos_notificaciones.sql', '../upgrade/V14__inicio_real_atencion.sql', '../upgrade/V15__vigencia_recordatorios.sql'] as $file) {
             $sql = str_replace("\r\n", "\n", file_get_contents(base_path('../database_clinica/migration/'.$file)));
             preg_match_all('/CREATE(?: OR REPLACE)? FUNCTION public\.(\w+)\s*\(.*?\bAS \$\$(.*?)\$\$/si', $sql, $matches, PREG_SET_ORDER);
             foreach ($matches as $match) {
@@ -56,7 +56,7 @@ final class ClinicalInfrastructureTest extends TestCase
             preg_match_all('/CREATE TRIGGER (\w+)/i', $sql, $matches);
             $triggers = array_merge($triggers, $matches[1]);
         }
-        $this->assertCount(42, $definitions);
+        $this->assertCount(44, $definitions);
         foreach ($definitions as $name => $body) {
             $query = $this->owner->prepare("SELECT prosrc FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=?");
             $query->execute([$name]);
@@ -73,6 +73,8 @@ final class ClinicalInfrastructureTest extends TestCase
         $this->assertSame(32, (int) $this->owner->query("SELECT octet_length(secreto) FROM configuracion_seguridad WHERE nombre='QR_HMAC'")->fetchColumn());
         $this->assertSame('ALWAYS', $this->owner->query("SELECT is_generated FROM information_schema.columns WHERE table_schema='public' AND table_name='usuarios' AND column_name='cod_usu'")->fetchColumn());
         $this->assertSame('false', $this->owner->query("SELECT column_default FROM information_schema.columns WHERE table_schema='public' AND table_name='pacientes' AND column_name='email_verificado'")->fetchColumn());
+        $column = $this->owner->query("SELECT data_type, is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='citas' AND column_name='hora_inicio_atencion'")->fetch(PDO::FETCH_ASSOC);
+        $this->assertSame(['data_type' => 'timestamp with time zone', 'is_nullable' => 'YES'], $column);
     }
 
     public function test_laravel_reads_views_functions_and_bound_parameters_with_limited_permissions(): void
@@ -91,6 +93,8 @@ final class ClinicalInfrastructureTest extends TestCase
         $this->assertFalse($this->clinical->scalar("SELECT has_table_privilege(current_user,'public.configuracion_seguridad','SELECT')"));
         $this->assertFalse($this->clinical->scalar("SELECT has_table_privilege(current_user,'public.verificaciones_otp','SELECT')"));
         $this->assertTrue($this->clinical->scalar("SELECT has_function_privilege(current_user,'public.crear_otp_email(text)','EXECUTE')"));
+        $this->assertTrue($this->clinical->scalar("SELECT has_function_privilege(current_user,'public.iniciar_atencion_cita(text,text)','EXECUTE')"));
+        $this->assertFalse($this->clinical->scalar("SELECT has_column_privilege(current_user,'public.citas','hora_inicio_atencion','UPDATE')"));
         $this->assertFalse($this->clinical->scalar("SELECT has_schema_privilege(current_user,'public','CREATE')"));
         $this->assertFalse($this->clinical->scalar("SELECT has_table_privilege(current_user,'public.bitacora','INSERT')"));
     }

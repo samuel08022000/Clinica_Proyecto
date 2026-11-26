@@ -7,7 +7,7 @@
     <div data-clinical-live-content>
     <x-admin.heading :title="$appointment['codCit']" description="Información administrativa de la cita." />
     <section class="a-panel"><h2>Detalle de la reserva</h2><x-appointment-summary :appointment="$appointment" /></section>
-    <x-clinical-progress :state="$appointment['estado']" />
+    <x-clinical-progress :state="\App\Support\AppointmentPresentation::operationalState($appointment)" />
     @if(in_array($appointment['estado'], ['Confirmada', 'Afectada/Pendiente Reprogramación'], true))
         <x-admin.button variant="secondary" :href="route('secretaria.citas.reprogramar', $appointment['codCit'])">Reprogramar cita</x-admin.button>
     @endif

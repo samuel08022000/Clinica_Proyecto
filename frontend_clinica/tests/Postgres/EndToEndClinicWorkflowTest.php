@@ -254,6 +254,8 @@ final class EndToEndClinicWorkflowTest extends TestCase
         $this->get('/secretaria/inicio')->assertForbidden();
 
         $this->get("/medico/citas/$codCit1")->assertOk()->assertSee('En Espera');
+        $this->post("/medico/citas/$codCit1/iniciar")->assertRedirect();
+        $this->get("/medico/citas/$codCit1")->assertOk()->assertSee('En Atención')->assertSee('Finalizar atención');
         $this->post("/medico/citas/$codCit1/analisis", ['tipoAnalisis' => 'Hemograma completo', 'confirmacion' => 1])->assertRedirect();
         $this->post("/medico/citas/$codCit1/analisis", ['tipoAnalisis' => 'Perfil lipídico', 'confirmacion' => 1])->assertRedirect();
 
@@ -305,6 +307,8 @@ final class EndToEndClinicWorkflowTest extends TestCase
         $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])
             ->post('/login', ['email' => $secEmail, 'password' => $secPass])
             ->assertRedirect('/secretaria/inicio');
+        $this->get('/secretaria/inicio', ['X-Clinical-Refresh' => '1'])->assertOk()
+            ->assertSee('Prioridad alta')->assertSee(route('secretaria.derivaciones.show', $codDer));
         $this->get('/secretaria/derivaciones')->assertOk()->assertSee($codDer);
         $this->get('/secretaria/reservas/nueva?codDer='.$codDer.'&fecha='.$tomorrowClinic->toDateString())
             ->assertOk()
@@ -330,6 +334,7 @@ final class EndToEndClinicWorkflowTest extends TestCase
         ])->assertRedirect();
         $codCit2 = basename((string) $childResponse->headers->get('Location'));
         $this->get("/secretaria/derivaciones/$codDer")->assertOk()->assertSee('Agendada')->assertSee($codCit2);
+        $this->get('/secretaria/inicio', ['X-Clinical-Refresh' => '1'])->assertOk()->assertDontSee($codDer);
 
         // Cancelación de cita hija + insignia roja a-badge--danger en UI.
         $this->post("/secretaria/citas/$codCit2/cancelar", [

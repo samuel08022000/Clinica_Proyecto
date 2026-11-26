@@ -2,6 +2,11 @@
 @section('reception_title', 'Panel de Secretaría')
 @section('reception_content')
     <x-admin.heading title="Panel de Secretaría" description="Recepción, reservas y llegadas en un mismo lugar."><x-admin.button :href="route('secretaria.reservas.create')"><x-admin.icon name="plus" />Nueva reserva</x-admin.button></x-admin.heading>
+    <section class="a-panel a-stack r-referral-notices" aria-labelledby="referral-notices-title">
+        <h2 id="referral-notices-title"><x-admin.icon name="bell" /> Avisos de derivación</h2>
+        <p class="visually-hidden" role="status" data-clinical-live-status></p>
+        @include('secretaria.partials.referral-notices')
+    </section>
     <div class="r-quick-actions a-actions" aria-label="Operaciones frecuentes">
         <x-admin.button variant="secondary" :href="route('secretaria.pacientes.index')">Buscar paciente</x-admin.button>
         <x-admin.button variant="secondary" :href="route('secretaria.checkin.index')">Registrar check-in</x-admin.button>

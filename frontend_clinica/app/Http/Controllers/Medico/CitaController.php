@@ -21,16 +21,25 @@ final class CitaController extends Controller
     public function show(string $cita): View
     {
         $appointment = $this->appointments->appointment($cita);
+        $canAttend = $appointment['estado'] === 'En Espera' && $appointment['checkinRegistrado']
+            && $appointment['fechaAtencion'] === null && $appointment['atendidaPorUsu'] === null;
 
         return view('medico.citas.show', [
             'appointment' => $appointment,
             'derivaciones' => $this->referrals->forAppointment($cita),
             'analisis' => $this->analyses->listing($cita),
-            'canFinish' => $appointment['estado'] === 'En Espera' && $appointment['checkinRegistrado']
-                && $appointment['fechaAtencion'] === null && $appointment['atendidaPorUsu'] === null,
+            'canStart' => $canAttend && $appointment['horaInicioAtencion'] === null,
+            'canFinish' => $canAttend && $appointment['horaInicioAtencion'] !== null,
             'canRefer' => $appointment['estado'] === 'Atendida',
             'canRequestAnalysis' => in_array($appointment['estado'], ['En Espera', 'Atendida'], true),
         ]);
+    }
+
+    public function start(string $cita): RedirectResponse
+    {
+        $this->appointments->start($cita);
+
+        return redirect()->route('medico.citas.show', $cita)->with('success', 'Se registró el inicio de la atención.');
     }
 
     public function finish(FinishAppointmentRequest $request, string $cita): RedirectResponse

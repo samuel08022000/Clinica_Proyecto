@@ -6,6 +6,7 @@
 </aside>
 <div class="a-workspace">
     <header class="a-topbar">
+        {{ $mobileHeader ?? '' }}
         <x-admin.button type="button" variant="secondary" class="a-mobile-toggle" data-open-admin-menu aria-haspopup="dialog" aria-controls="admin-mobile-menu" aria-expanded="false"><x-admin.icon name="menu" />Menú</x-admin.button>
         <span>{{ $title }}</span>
         <div class="a-account">{{ session('nombre_usuario') }}<small>{{ session('email_usuario') }} · {{ $role }}</small></div>

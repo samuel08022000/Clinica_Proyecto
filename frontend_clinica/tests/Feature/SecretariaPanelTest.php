@@ -202,6 +202,39 @@ class SecretariaPanelTest extends TestCase
         $this->assertSame(['page' => 0, 'size' => 20], $citasCall['data']);
     }
 
+    public function test_dashboard_shows_high_priority_pending_referrals_above_appointments(): void
+    {
+        $this->override = fn ($method, $path) => $path === '/derivaciones'
+            ? ['derivaciones' => [self::referral(['motivo' => 'Información clínica privada'])], 'hayMas' => true]
+            : null;
+
+        $response = $this->secretary()->get('/secretaria/inicio')->assertOk()
+            ->assertSeeInOrder(['Avisos de derivación', 'Prioridad alta', 'Citas del día clínico'])
+            ->assertSee('Medicina interna · Derivó Carlos Quispe')
+            ->assertSee('12/11/2026 10:00')
+            ->assertSee('href="'.route('secretaria.derivaciones.show', 'DER00000001').'"', false)
+            ->assertSee('href="'.route('secretaria.derivaciones.index', ['estado' => 'Pendiente']).'"', false)
+            ->assertDontSee('Información clínica privada');
+
+        $referralsCall = collect($this->recorded)->firstWhere('path', '/derivaciones');
+        $this->assertSame(['estado' => 'Pendiente', 'page' => 0, 'size' => 3], $referralsCall['data']);
+        ClinicalVisualSnapshots::save('secretaria-dashboard', $response->getContent());
+    }
+
+    public function test_dashboard_refresh_returns_only_current_referral_notices(): void
+    {
+        $this->override = fn () => ['derivaciones' => [], 'hayMas' => false];
+
+        $response = $this->secretary()->get('/secretaria/inicio', ['X-Clinical-Refresh' => '1'])
+            ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertSee('data-clinical-live-content', false)
+            ->assertSee('No hay derivaciones pendientes de agendar.')
+            ->assertDontSee('Prioridad alta')->assertDontSee('Citas del día clínico');
+
+        $this->assertSame(['/derivaciones'], array_column($this->recorded, 'path'));
+        ClinicalVisualSnapshots::save('secretaria-referral-notices-empty', $response->getContent());
+    }
+
     public function test_all_secretary_routes_require_session(): void
     {
         foreach (self::screens() as [$path]) {

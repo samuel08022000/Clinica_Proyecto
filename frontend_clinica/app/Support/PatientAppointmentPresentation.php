@@ -18,18 +18,19 @@ final class PatientAppointmentPresentation
             'America/La_Paz',
         );
         $state = (string) $appointment['estado'];
+        $operationalState = AppointmentPresentation::operationalState($appointment);
         $expired = (bool) ($appointment['esVencida'] ?? false);
 
         return $appointment + [
             'inicio' => $start,
             'fechaTexto' => ucfirst($start->isoFormat('dddd D [de] MMMM')),
             'horaTexto' => $start->format('H:i').' – '.$end->format('H:i'),
-            'esProxima' => in_array($state, ['Confirmada', 'En Espera'], true) && ! $expired,
+            'esProxima' => $state === 'En Espera' || ($state === 'Confirmada' && ! $expired),
             'cancelable' => (bool) ($appointment['puedeCancelar'] ?? ($state === 'Confirmada' && ! $expired)),
             'reprogramable' => (bool) ($appointment['puedeReprogramar'] ?? ($state === 'Confirmada' && ! $expired)),
             'requiereReprogramacion' => $state === 'Afectada/Pendiente Reprogramación',
-            'estadoTexto' => self::stateText($state),
-            'estadoClase' => self::stateClass($state),
+            'estadoTexto' => self::stateText($operationalState),
+            'estadoClase' => self::stateClass($operationalState),
         ];
     }
 
@@ -37,6 +38,7 @@ final class PatientAppointmentPresentation
     {
         return match ($state) {
             'En Espera' => 'En espera',
+            'En Atención' => 'En atención',
             'No Asistió' => 'No asistió',
             'Afectada/Pendiente Reprogramación' => 'Requiere reprogramación',
             default => $state,
@@ -47,7 +49,7 @@ final class PatientAppointmentPresentation
     {
         return match ($state) {
             'Confirmada' => 'confirmada',
-            'En Espera' => 'espera',
+            'En Espera', 'En Atención' => 'espera',
             'Atendida' => 'atendida',
             'Cancelada' => 'cancelada',
             'No Asistió' => 'noasistio',

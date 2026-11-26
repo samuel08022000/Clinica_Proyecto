@@ -5,8 +5,10 @@ namespace Tests\Postgres;
 use App\Exceptions\ClinicalOperationException;
 use App\Models\Usuario;
 use App\Services\Administration\DashboardService;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use PDO;
@@ -160,6 +162,97 @@ class DashboardMetricsTest extends TestCase
         $this->expectException(ClinicalOperationException::class);
         $this->expectExceptionMessage('No tienes permisos');
         app(DashboardService::class)->snapshot();
+    }
+
+    public function test_waiting_thresholds_and_observed_samples_use_their_own_denominators(): void
+    {
+        $db = $this->clinical;
+        $this->actingAs($this->identity('ROL004'), 'web');
+        $doctor = $this->identity('ROL003')->cod_usu;
+        $secretary = $this->identity('ROL002')->cod_usu;
+        $patientUser = $this->identity('ROL001')->cod_usu;
+        $tag = bin2hex(random_bytes(6));
+        $doctorCode = $db->scalar('INSERT INTO medicos(cod_usu,matricula_profesional,duracion_consulta_min) VALUES (?,?,20) RETURNING cod_med', [$doctor, "WAIT-$tag"]);
+        $secretaryCode = $db->scalar('INSERT INTO secretarias(cod_usu) VALUES (?) RETURNING cod_sec', [$secretary]);
+        $patient = $db->scalar("INSERT INTO pacientes(cod_usu,ci,fecha_nacimiento,telefono,ciudad_residencia,email_verificado)
+            VALUES (?,?,'1995-01-01','70000000','La Paz',true) RETURNING cod_pac", [$patientUser, "WAIT-$tag"]);
+        $specialty = $db->scalar('INSERT INTO especialidades(nombre_especialidad,duracion_consulta_min) VALUES (?,20) RETURNING cod_esp', ["Espera $tag"]);
+        $db->insert('INSERT INTO medico_especialidades(cod_med,cod_esp) VALUES (?,?)', [$doctorCode, $specialty]);
+        $date = $db->scalar('SELECT fecha_clinica()+2');
+        $schedule = $db->scalar("INSERT INTO horarios(cod_med,dia_semana,hora_inicio,hora_fin)
+            VALUES (?,extract(isodow FROM ?::date)::int,'08:00','12:00') RETURNING cod_hor", [$doctorCode, $date]);
+        $idleDoctors = [];
+        foreach (['sin_demanda', 'sin_capacidad'] as $expected) {
+            $idle = $db->scalar('INSERT INTO medicos(cod_usu,matricula_profesional,duracion_consulta_min) VALUES (?,?,20) RETURNING cod_med',
+                [$this->identity('ROL003')->cod_usu, "$expected-$tag"]);
+            $idleDoctors[$idle] = $expected;
+            $db->insert('INSERT INTO medico_especialidades(cod_med,cod_esp) VALUES (?,?)', [$idle, $specialty]);
+            if ($expected === 'sin_demanda') {
+                $db->insert("INSERT INTO horarios(cod_med,dia_semana,hora_inicio,hora_fin) VALUES (?,extract(isodow FROM ?::date)::int,'08:00','12:00')",
+                    [$idle, $date]);
+            }
+        }
+        $capture = CarbonImmutable::parse($db->scalar('SELECT clock_timestamp()'))->setTimezone('America/La_Paz')->startOfSecond();
+        $format = static fn (?CarbonImmutable $time): ?string => $time?->toIso8601String();
+        $waiting = 'En Espera';
+        $attended = 'Atendida';
+        $fixtures = [
+            [$waiting, $capture->subMinutes(15), null, null],
+            [$waiting, $capture->subMinutes(30), null, null],
+            [$waiting, $capture->subMinutes(30)->subSecond(), null, null],
+            [$waiting, $capture->addSecond(), null, null],
+            [$waiting, $capture->subMinutes(60), $capture->subMinutes(20), null],
+            [$attended, $capture->subMinutes(40), $capture->subMinutes(30), $capture->subMinutes(5)],
+            [$attended, $capture->subMinutes(30), null, $capture->subMinutes(10)],
+            [$attended, $capture->subMinutes(10), $capture->subMinutes(35), $capture->subMinutes(20)],
+        ];
+        foreach ($fixtures as $index => [$state, $arrival, $start, $finish]) {
+            $minutesAfterEight = $index * 20;
+            $slot = $db->scalar("SELECT cod_slot FROM slots_agenda WHERE cod_hor=? AND cod_esp=? AND inicio_at=?::date+time '08:00'+make_interval(mins=>?)",
+                [$schedule, $specialty, $date, $minutesAfterEight]);
+            $db->insert(<<<'SQL'
+                INSERT INTO citas(cod_pac,cod_slot,estado,canal_reserva,cod_sec,hora_llegada_checkin,
+                    checkin_por_usu,hora_inicio_atencion,fecha_atencion,atendida_por_usu)
+                VALUES (?,?,?,'Ventanilla',?,?::timestamptz,?,?::timestamptz,?::timestamptz,?)
+                SQL, [
+                $patient, $slot, $state, $secretaryCode, $format($arrival), $secretary,
+                $format($start), $format($finish), $finish !== null ? $doctor : null,
+            ]);
+        }
+
+        Date::setTestNow($capture);
+        try {
+            $service = app(DashboardService::class);
+            $data = $service->snapshot(['periodo' => 'personalizado', 'desde' => $date, 'hasta' => $date, 'medico' => $doctorCode]);
+            $queues = $data['queues'];
+            $doctorWait = $queues['espera_actual']['por_medico'][$doctorCode];
+            $this->assertSame([4, 1, 1, 1, 1, 1], array_map(
+                fn (string $key) => $doctorWait[$key],
+                ['total', 'en_atencion', 'dentro', 'moderada', 'elevada', 'sin_tiempo'],
+            ));
+            $this->assertEqualsWithDelta(100 / 3, $doctorWait['porcentaje'], 1e-9);
+            $this->assertEqualsWithDelta(30 + 1 / 60, $doctorWait['maximo'], 1e-9);
+            $this->assertSame($capture->format('d/m/Y H:i:s'), $queues['espera_actual']['actualizado']);
+            $this->assertArrayNotHasKey('simulacion', $queues);
+            $this->assertSame([
+                'espera' => 25.0, 'muestra_espera' => 2, 'consulta' => 25.0, 'programada' => 20.0,
+                'muestra_consulta' => 1, 'total' => 27.5, 'muestra_total' => 2,
+            ], $queues['resumen_global']['observado']);
+            $this->assertSame(27.5, $queues['resumen_global']['w_empirico_minutos']);
+            $this->assertSame(2, $queues['evolucion_espera'][0]['sample']);
+            $bySpecialty = $service->snapshot(['periodo' => 'personalizado', 'desde' => $date, 'hasta' => $date, 'especialidad' => $specialty]);
+            $doctors = array_column($bySpecialty['queues']['por_medico'], null, 'cod_med');
+            foreach ($idleDoctors as $idle => $expected) {
+                $this->assertSame($expected, $doctors[$idle]['utilizacion']['estado']);
+                $this->assertSame($expected === 'sin_demanda' ? 0.0 : null, $doctors[$idle]['utilizacion']['valor']);
+                $this->assertSame(0, $doctors[$idle]['en_espera_hoy']);
+            }
+            $emptyHistory = $service->snapshot(['periodo' => 'personalizado', 'desde' => '1900-01-01', 'hasta' => '1900-01-03', 'especialidad' => $specialty]);
+            $this->assertSame($doctorWait, $emptyHistory['queues']['espera_actual']['por_medico'][$doctorCode]);
+            $this->assertSame([], $emptyHistory['queues']['evolucion_espera']);
+        } finally {
+            Date::setTestNow();
+        }
     }
 
     private function identity(string $role): Usuario

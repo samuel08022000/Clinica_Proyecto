@@ -13,6 +13,9 @@
         @case('logout') <path d="M9 21H3V3h6m7 4 5 5-5 5m-9-5h14"/> @break
         @case('menu') <path d="M4 6h16M4 12h16M4 18h16"/> @break
         @case('plus') <path d="M12 5v14M5 12h14"/> @break
+        @case('bell') <path d="M18 8a6 6 0 0 0-12 0c0 6-3 8-3 9h18c0-1-3-3-3-9ZM10 20a2 2 0 0 0 4 0"/> @break
+        @case('person') <circle cx="12" cy="7" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/> @break
+        @case('clock') <circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/> @break
         @default <path d="M5 12h14m-6-6 6 6-6 6"/>
     @endswitch
 </svg>

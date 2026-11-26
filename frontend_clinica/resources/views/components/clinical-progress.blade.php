@@ -1,5 +1,5 @@
 @props(['state', 'referral' => false])
-@php($steps = $referral ? ['Pendiente', 'Agendada', 'Completada'] : ['Confirmada', 'En Espera', 'Atendida'])
+@php($steps = $referral ? ['Pendiente', 'Agendada', 'Completada'] : ['Confirmada', 'En Espera', 'En Atención', 'Atendida'])
 <section class="clinical-progress" aria-label="{{ $referral ? 'Progreso de derivación' : 'Progreso de cita' }}">
     <ol>
         @foreach($steps as $step)

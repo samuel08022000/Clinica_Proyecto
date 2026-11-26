@@ -5,7 +5,7 @@
     </div>
 
     <div class="pac-cita__body">
-        <h3>{{ $cita['nombreEspecialidad'] }}</h3>
+        <h2>{{ $cita['nombreEspecialidad'] }}</h2>
         <p class="pac-cita__doctor">{{ $cita['nombreMedico'] }}</p>
         @if ($cita['requiereReprogramacion'])
             <p class="pac-cita__motivo">Un cambio en la agenda del médico afectó esta cita. Contacta con la clínica para reprogramarla.</p>
@@ -15,7 +15,9 @@
     <div class="pac-cita__side">
         <span class="pac-badge pac-badge--{{ $cita['estadoClase'] }}">{{ $cita['estadoTexto'] }}</span>
 
-        <a class="pac-more" href="{{ route('paciente.citas.show', $cita['codCit']) }}">Ver detalle</a>
+        @unless (request()->routeIs('paciente.citas.show'))
+            <a class="pac-more" href="{{ route('paciente.citas.show', $cita['codCit']) }}">Ver detalle <x-admin.icon name="arrow" /></a>
+        @endunless
         @if (! empty($mostrarAcciones) && $cita['cancelable'])
             <a class="pac-link-danger" href="{{ route('paciente.citas.show', $cita['codCit']) }}#cancelar-cita">Cancelar cita</a>
         @elseif (! empty($mostrarAcciones) && $cita['esProxima'])

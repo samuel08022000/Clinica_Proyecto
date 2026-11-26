@@ -1,7 +1,8 @@
 const dashboard = document.querySelector('[data-dashboard]');
 
-if (dashboard) {
-    const form = dashboard.querySelector('[data-dashboard-filter]');
+const form = dashboard?.querySelector('[data-dashboard-filter]');
+
+if (form) {
     const period = form.querySelector('[data-dashboard-period]');
     const dates = form.querySelector('[data-dashboard-dates]');
     const syncDates = () => {
@@ -27,7 +28,9 @@ if (dashboard) {
         button.textContent = 'Actualizar';
         form.removeAttribute('aria-busy');
     });
+}
 
+if (dashboard) {
     dashboard.querySelectorAll('[data-dashboard-trend]').forEach((chart) => {
         const tooltip = chart.querySelector('[data-chart-tooltip]');
         const svg = chart.querySelector('svg');
@@ -37,7 +40,7 @@ if (dashboard) {
             selected = Math.max(0, Math.min(index, points.length - 1));
             points.forEach((point, i) => point.classList.toggle('is-active', i === selected));
             const point = points[selected];
-            tooltip.textContent = `${point.dataset.label}: ${Number(point.dataset.value).toLocaleString('es-BO')} pacientes`;
+            tooltip.textContent = `${point.dataset.label} · ${Number(point.dataset.value).toLocaleString('es-BO', { maximumFractionDigits: 1 })} ${chart.dataset.unit}`;
             tooltip.hidden = false;
         };
         const clearPoint = () => {
@@ -46,18 +49,19 @@ if (dashboard) {
         };
         const resize = () => {
             const width = Math.max(240, chart.clientWidth);
-            const x = (index) => points.length > 1 ? 42 + index / (points.length - 1) * (width - 70) : width / 2;
+            const x = (index) => points.length > 1 ? 42 + Number(points[index].dataset.position) * (width - 70) : width / 2;
             svg.setAttribute('viewBox', `0 0 ${width} 180`);
             chart.querySelectorAll('.ad-gridline').forEach((line) => line.setAttribute('x2', width - 28));
             points.forEach((point, index) => point.setAttribute('cx', x(index)));
             chart.querySelector('.ad-trend-line')?.setAttribute('points', points.map((point) => `${point.getAttribute('cx')},${point.getAttribute('cy')}`).join(' '));
-            const baseStep = Math.max(1, Math.ceil((points.length - 1) / 5));
-            const capacity = Math.max(2, Math.floor((width - 70) / 64));
-            const step = baseStep * Math.max(1, Math.ceil((points.length - 1) / (capacity * baseStep)));
+            let lastTick = -Infinity;
             chart.querySelectorAll('[data-chart-tick]').forEach((tick) => {
                 const index = Number(tick.dataset.index);
-                tick.setAttribute('x', x(index));
-                tick.style.display = index % step === 0 ? '' : 'none';
+                const offset = x(index);
+                const fits = offset - lastTick >= 62;
+                tick.setAttribute('x', offset);
+                tick.style.display = fits ? '' : 'none';
+                if (fits) lastTick = offset;
             });
         };
         resize();

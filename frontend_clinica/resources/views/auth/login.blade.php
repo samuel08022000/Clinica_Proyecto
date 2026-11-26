@@ -53,10 +53,9 @@
                             inputmode="email"
                             required
                             autofocus
-                            aria-describedby="email-help @error('email') email-error @enderror"
+                            @error('email') aria-describedby="email-error" @enderror
                             @error('email') aria-invalid="true" @enderror
                         >
-                        <p id="email-help" class="field__help">El backend actual identifica usuarios mediante correo electrónico.</p>
                         @error('email')
                             <p id="email-error" class="field__error">{{ $message }}</p>
                         @enderror

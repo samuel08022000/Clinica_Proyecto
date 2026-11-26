@@ -1,35 +1,41 @@
 @extends('layouts.app')
 
-@section('body_class', 'dashboard-page paciente-page')
+@section('body_class', 'paciente-page')
 
 @section('content')
-    <header class="dashboard-header">
-        <a class="brand" href="{{ route('paciente.home') }}" aria-label="Ir al inicio del paciente">
-            <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v30M5 20h30" /><path d="M11 11h18v18H11z" /></svg>
-            <span>{{ config('clinic.identity.short_name') }}</span>
-        </a>
+    <header class="pac-topbar">
+        <div class="pac-topbar__inner">
+            <a class="brand" href="{{ route('paciente.home') }}" aria-label="Ir al inicio del paciente">
+                <svg class="brand__mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 5v30M5 20h30" /><path d="M11 11h18v18H11z" /></svg>
+                <span>{{ config('clinic.identity.short_name') }}<small>Portal del paciente</small></span>
+            </a>
 
-        <div class="pac-user">
-            <span class="pac-user__name">{{ session('nombre_usuario') }}</span>
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button class="button button--secondary pac-btn-sm" type="submit">Cerrar sesión</button>
-            </form>
+            <div class="pac-user">
+                <span class="pac-user__name">{{ session('nombre_usuario') }}</span>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button class="pac-signout" type="submit"><x-admin.icon name="logout" /> Cerrar sesión</button>
+                </form>
+            </div>
         </div>
     </header>
 
     <div class="pac-shell">
         <nav class="pac-nav" aria-label="Menú del paciente">
             @foreach ([
-                ['paciente.home', 'Inicio'],
-                ['paciente.citas.nueva', 'Agendar cita'],
-                ['paciente.citas', 'Mis citas'],
-                ['paciente.notificaciones', 'Notificaciones'],
-                ['paciente.perfil', 'Mi perfil'],
-            ] as [$ruta, $texto])
+                ['paciente.home', 'home', 'Inicio', 'Inicio'],
+                ['paciente.citas', 'calendar', 'Mis citas', 'Mis citas'],
+                ['paciente.citas.nueva', 'plus', 'Agendar cita', 'Agendar'],
+                ['paciente.notificaciones', 'bell', 'Notificaciones', 'Avisos'],
+                ['paciente.perfil', 'person', 'Mi perfil', 'Perfil'],
+            ] as [$ruta, $icono, $texto, $corto])
+                @php($enSeccion = request()->routeIs($ruta) || ($ruta === 'paciente.citas' && request()->routeIs('paciente.citas.show', 'paciente.citas.reprogramar')))
                 <a href="{{ route($ruta) }}"
-                   class="pac-nav__link {{ request()->routeIs($ruta) ? 'is-active' : '' }}"
-                   @if (request()->routeIs($ruta)) aria-current="page" @endif>{{ $texto }}</a>
+                   class="pac-nav__link"
+                   @if ($enSeccion) aria-current="{{ request()->routeIs($ruta) ? 'page' : 'location' }}" @endif>
+                    <x-admin.icon :name="$icono" />
+                    <span class="pac-nav__full">{{ $texto }}</span><span class="pac-nav__short">{{ $corto }}</span>
+                </a>
             @endforeach
         </nav>
 

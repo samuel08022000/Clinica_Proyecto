@@ -5,13 +5,12 @@
 @section('panel')
     <section class="pac-head" aria-labelledby="pac-title">
         <h1 id="pac-title">Agendar cita</h1>
-        <p>Sigue los pasos: elige la especialidad, el día y el horario que prefieras.</p>
     </section>
 
     {{-- Paso 1 --}}
     <section class="pac-panel" aria-labelledby="paso1">
         <h2 id="paso1">1. Especialidad</h2>
-        <form method="GET" action="{{ route('paciente.citas.nueva') }}" class="pac-inline-form">
+        <form method="GET" action="{{ route('paciente.citas.nueva') }}#paso2" class="pac-inline-form">
             <div class="field">
                 <label for="esp">¿Con qué especialidad quieres atenderte?</label>
                 <select id="esp" name="codEsp" required>
@@ -31,7 +30,7 @@
     @if ($esp)
         <section class="pac-panel" aria-labelledby="paso2">
             <h2 id="paso2">2. Médico y fecha</h2>
-            <form method="GET" action="{{ route('paciente.citas.nueva') }}" class="pac-inline-form">
+            <form method="GET" action="{{ route('paciente.citas.nueva') }}#paso3" class="pac-inline-form">
                 <input type="hidden" name="codEsp" value="{{ $esp }}">
                 <div class="field">
                     <label for="med">Médico</label>

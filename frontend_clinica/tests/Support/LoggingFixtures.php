@@ -198,7 +198,8 @@ final class LoggingConnection extends PostgresConnection
             'motivo' => 'MEDICAL_PRIVATE_SENTINEL', 'motivo_derivacion' => 'MEDICAL_PRIVATE_SENTINEL',
             'token_qr' => 'QR_PRIVATE_SENTINEL', 'tokenQr' => 'QR_PRIVATE_SENTINEL',
             'nombreCompleto' => 'PERSONAL_PRIVATE_SENTINEL',
-            'id_notificacion' => 'NOT00000001', 'cita' => $appointment, 'canal_salida' => 'Email',
+            'id_notificacion' => 1, 'cita' => $appointment, 'canal_salida' => 'Email',
+            'usuario' => $this->actor(), 'numero_intento' => 1, 'creado_en' => '2026-11-20 08:00:00-04',
             'tipo' => 'Confirmacion', 'destino' => 'private-sentinel@example.invalid',
             'mensaje' => 'MEDICAL_PRIVATE_SENTINEL', 'vencida' => false,
         ];

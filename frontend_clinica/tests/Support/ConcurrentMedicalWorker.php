@@ -30,6 +30,7 @@ try {
     }
 
     $result = match ($payload['operation']) {
+        'start' => $app->make(MedicoAtencionService::class)->start($payload['code']),
         'finish' => $app->make(MedicoAtencionService::class)->finish($payload['code']),
         'referral' => $app->make(MedicoDerivacionService::class)->create($payload['appointment'], $payload['data']),
         'analysis-request' => $app->make(MedicoAnalisisService::class)->request($payload['appointment'], $payload['data']),

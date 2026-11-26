@@ -220,23 +220,39 @@ class PatientPanelTest extends TestCase
         $this->accountRole = 'ROL003';
         $this->patient('ROL003')->get(route('paciente.notificaciones'))->assertForbidden();
         $this->accountRole = 'ROL001';
-        $this->patient()->get(route('paciente.notificaciones'))->assertOk()->assertSee('Aviso propio de prueba')->assertSee('CIT0001');
+        $response = $this->patient()->get(route('paciente.notificaciones'))->assertOk()->assertSee('Aviso propio de prueba')->assertSee('CIT0001');
+        ClinicalVisualSnapshots::save('notificaciones', $response->getContent());
     }
 
     public function test_patient_sees_original_navigation_and_laravel_backed_dashboard(): void
     {
-        $this->patient()->get(route('paciente.home'))
+        $response = $this->patient()->get(route('paciente.home'))
             ->assertOk()
             ->assertHeader('Cache-Control', 'no-store, private')
             ->assertViewIs('paciente.home')
             ->assertSee('Hola, Rosa')
             ->assertSee('Tu próxima cita')
+            ->assertSee('Ver cita y pase QR')
             ->assertSee('Agendar cita')
             ->assertSee('Mis citas')
             ->assertSee('Mi perfil')
             ->assertSee('action="'.route('logout').'"', false)
             ->assertDontSee('administracion/')
             ->assertDontSee('secretaria/');
+        ClinicalVisualSnapshots::save('inicio', $response->getContent());
+    }
+
+    public function test_patient_without_an_upcoming_appointment_can_start_a_booking_from_home(): void
+    {
+        $this->appointments->shouldReceive('list')->with(['alcance' => 'proximas', 'page' => 0, 'size' => 1])
+            ->once()->andReturn(['citas' => [], 'hayMas' => false]);
+        $profile = $this->profileData();
+        $profile['resumen']['citasProximas'] = 0;
+        $this->profiles->shouldReceive('profile')->once()->andReturn($profile);
+        $response = $this->patient()->get(route('paciente.home'))->assertOk()
+            ->assertSee('No tienes citas próximas.')->assertSee('Agendar una cita')
+            ->assertDontSee('Ver detalle de cita');
+        ClinicalVisualSnapshots::save('inicio-sin-cita', $response->getContent());
     }
 
     public function test_patient_can_search_availability_and_reserve_without_client_patient_identifier(): void
@@ -245,7 +261,7 @@ class PatientPanelTest extends TestCase
         $this->appointments->shouldReceive('reserve')->once()->with('SLOT0001')
             ->andReturn($this->appointment('CIT0004'));
 
-        $this->patient()->get(route('paciente.citas.nueva', [
+        $response = $this->patient()->get(route('paciente.citas.nueva', [
             'codEsp' => 'ESP001',
             'codMed' => 'MED001',
             'fecha' => $date,
@@ -255,6 +271,7 @@ class PatientPanelTest extends TestCase
             ->assertSee('Cardiología')
             ->assertSee('Dra. Ana Flores')
             ->assertSee('SLOT0001', false);
+        ClinicalVisualSnapshots::save('agendar', $response->getContent());
 
         $this->patient()->post(route('paciente.citas.store'), [
             'codSlot' => 'SLOT0001',
@@ -264,18 +281,22 @@ class PatientPanelTest extends TestCase
 
     public function test_patient_can_list_and_open_own_appointment_detail(): void
     {
-        $this->patient()->get(route('paciente.citas'))
+        $response = $this->patient()->get(route('paciente.citas'))
             ->assertOk()
             ->assertViewIs('paciente.citas')
             ->assertSee('Mis citas')
             ->assertSee('Cardiología')
             ->assertSee(route('paciente.citas.show', 'CIT0001'), false);
+        ClinicalVisualSnapshots::save('mis-citas', $response->getContent());
 
-        $this->patient()->get(route('paciente.citas.show', 'CIT0001'))
+        $this->appointments->shouldReceive('checkInPass')->with('CIT0001')->once()->andReturn(['tokenQr' => 'token-de-prueba']);
+        $response = $this->patient()->get(route('paciente.citas.show', 'CIT0001'))
             ->assertOk()
             ->assertViewIs('paciente.detalle')
             ->assertSee('Detalle de cita')
-            ->assertSee('CIT0001');
+            ->assertSee('CIT0001')
+            ->assertSeeInOrder(['Pase QR de confirmación', 'Motivo de cancelación']);
+        ClinicalVisualSnapshots::save('detalle-con-qr', $response->getContent());
     }
 
     public function test_cancel_requires_reason_and_confirmation(): void
@@ -314,7 +335,7 @@ class PatientPanelTest extends TestCase
         $this->notifications->shouldReceive('sendConfirmation')->once()->with('CIT0005')
             ->globally()->ordered()->andReturn('Pendiente');
 
-        $this->patient()->get(route('paciente.citas.reprogramar', [
+        $response = $this->patient()->get(route('paciente.citas.reprogramar', [
             'cita' => 'CIT0001',
             'codMed' => 'MED001',
             'fecha' => $date,
@@ -323,6 +344,7 @@ class PatientPanelTest extends TestCase
             ->assertViewIs('paciente.reprogramar')
             ->assertSee('Reprogramar cita')
             ->assertSee('SLOT0001', false);
+        ClinicalVisualSnapshots::save('reprogramar', $response->getContent());
 
         $this->patient()->post(route('paciente.citas.reschedule', 'CIT0001'), [
             'codSlotNuevo' => 'SLOT0001',
@@ -334,13 +356,14 @@ class PatientPanelTest extends TestCase
 
     public function test_patient_can_consult_profile_without_editable_patient_identifier(): void
     {
-        $this->patient()->get(route('paciente.perfil'))
+        $response = $this->patient()->get(route('paciente.perfil'))
             ->assertOk()
             ->assertViewIs('paciente.perfil')
             ->assertSee('Rosa Mendoza')
             ->assertSee('rosa@example.test')
             ->assertDontSee('name="codPac"', false)
             ->assertDontSee('paciente.perfil.update');
+        ClinicalVisualSnapshots::save('perfil', $response->getContent());
     }
 
     public static function otherRoles(): array

@@ -7,6 +7,7 @@ use App\Models\Usuario;
 use App\Services\Clinical\ClinicalRoleGuard;
 use App\Services\Clinical\ClinicalSqlException;
 use App\Services\Clinical\ClinicalTransaction;
+use App\Support\AppointmentPresentation;
 use DateTimeImmutable;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -20,7 +21,7 @@ final class MedicoAtencionService
                c.fecha, c.hora_inicio AS "horaInicio", c.hora_fin AS "horaFin", c.estado,
                c.canal_reserva AS "canalReserva", c.hora_llegada_checkin AS "horaLlegadaCheckin",
                c.checkin_por_usu AS "checkinPorUsu", c.fecha_atencion AS "fechaAtencion",
-               c.atendida_por_usu AS "atendidaPorUsu"
+               c.atendida_por_usu AS "atendidaPorUsu", c.hora_inicio_atencion AS "horaInicioAtencion"
         FROM citas c
         JOIN pacientes p ON p.cod_pac=c.cod_pac
         JOIN usuarios up ON up.cod_usu=p.cod_usu
@@ -51,7 +52,8 @@ final class MedicoAtencionService
                 'citas' => $appointments,
                 'resumen' => [
                     'citasHoy' => count($appointments),
-                    'enEspera' => count(array_filter($appointments, fn (array $row): bool => $row['estado'] === 'En Espera')),
+                    'enEspera' => count(array_filter($appointments, fn (array $row): bool => AppointmentPresentation::operationalState($row) === 'En Espera')),
+                    'enAtencion' => count(array_filter($appointments, fn (array $row): bool => AppointmentPresentation::operationalState($row) === 'En Atención')),
                     'atendidas' => count(array_filter($appointments, fn (array $row): bool => $row['estado'] === 'Atendida')),
                     'derivacionesPendientes' => $pendingReferrals,
                 ],
@@ -109,33 +111,38 @@ final class MedicoAtencionService
         });
     }
 
+    public function start(string $code): array
+    {
+        return $this->transition($code, true);
+    }
+
     public function finish(string $code): array
+    {
+        return $this->transition($code, false);
+    }
+
+    private function transition(string $code, bool $start): array
     {
         self::identifier($code);
         $user = $this->roles->require('ROL003');
 
-        return $this->transactions->run(function (Connection $db) use ($code, $user): array {
+        return $this->transactions->run(function (Connection $db) use ($code, $user, $start): array {
             $doctor = $this->physician($db, $user);
-            $db->selectOne('SELECT bloquear_agenda_medico(?)', [$doctor['codMed']]);
-            $row = $db->selectOne(
-                'SELECT estado,hora_llegada_checkin,checkin_por_usu,fecha_atencion,atendida_por_usu FROM citas WHERE cod_cit=? AND cod_med=?',
-                [$code, $doctor['codMed']],
-            );
-            if ($row === null) {
+            if (! $db->scalar('SELECT EXISTS (SELECT 1 FROM citas WHERE cod_cit=? AND cod_med=?)', [$code, $doctor['codMed']])) {
                 self::missingAppointment();
             }
-            if ($row->estado !== 'En Espera' || $row->hora_llegada_checkin === null || $row->checkin_por_usu === null
-                || $row->fecha_atencion !== null || $row->atendida_por_usu !== null) {
+            $sql = $start ? 'SELECT iniciar_atencion_cita(?,?)' : 'SELECT marcar_cita_atendida(?,?)';
+            if (! $db->scalar($sql, [$code, $user->cod_usu])) {
                 throw new ClinicalOperationException(
                     409,
-                    'Solo puede finalizarse una cita en espera, con check-in completo y sin atención previa.',
+                    $start ? 'Solo puede iniciarse una cita en espera con check-in válido y sin inicio previo.'
+                        : 'Solo puede finalizarse una atención iniciada y pendiente de cierre.',
                     'ATENCION_NO_PERMITIDA',
                 );
             }
-            $db->scalar('SELECT marcar_cita_atendida(?,?)', [$code, $user->cod_usu]);
 
             return $this->appointmentRow($db, $doctor['codMed'], $code);
-        }, 'doctor.appointment.finished', ['entity_id' => $code]);
+        }, $start ? 'doctor.appointment.started' : 'doctor.appointment.finished', ['entity_id' => $code]);
     }
 
     public function specialties(): array

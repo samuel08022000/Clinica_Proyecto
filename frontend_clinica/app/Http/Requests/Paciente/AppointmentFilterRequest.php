@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests\Paciente;
 
+use App\Support\AppointmentPresentation;
+use Illuminate\Validation\Rule;
+
 final class AppointmentFilterRequest extends PacienteRequest
 {
     public function rules(): array
@@ -11,7 +14,7 @@ final class AppointmentFilterRequest extends PacienteRequest
             'estado' => [
                 'nullable',
                 'string',
-                'in:Confirmada,En Espera,Atendida,Cancelada,No Asistió,Afectada/Pendiente Reprogramación,Reprogramada',
+                Rule::in(AppointmentPresentation::STATES),
             ],
             'desde' => ['bail', 'nullable', 'date_format:Y-m-d'],
             'hasta' => ['bail', 'nullable', 'date_format:Y-m-d', 'after_or_equal:desde'],

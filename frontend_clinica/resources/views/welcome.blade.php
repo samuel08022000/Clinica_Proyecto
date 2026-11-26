@@ -19,29 +19,13 @@
                     >
                 </div>
 
-                <div class="booking-window" data-booking-window>
+                <div class="booking-window">
+                    @php($hoy = now('America/La_Paz')->locale('es'))
                     <div class="booking-window__heading">
-                        <p>Ventana de reserva</p>
-                        <strong>Hoy → 14 días</strong>
+                        <p>Fechas para reservar</p>
+                        <strong>{{ $hoy->isoFormat('D MMM') }} — {{ $hoy->copy()->addDays(14)->isoFormat('D MMM YYYY') }}</strong>
                     </div>
-                    <ol class="booking-window__days" aria-label="Fechas comprendidas en la ventana móvil de reserva" data-booking-days>
-                        <li><span>Hoy</span><strong>—</strong></li>
-                        <li><span>+1</span><strong>—</strong></li>
-                        <li><span>+2</span><strong>—</strong></li>
-                        <li><span>+3</span><strong>—</strong></li>
-                        <li><span>+4</span><strong>—</strong></li>
-                        <li><span>+5</span><strong>—</strong></li>
-                        <li><span>+6</span><strong>—</strong></li>
-                        <li><span>+7</span><strong>—</strong></li>
-                        <li><span>+8</span><strong>—</strong></li>
-                        <li><span>+9</span><strong>—</strong></li>
-                        <li><span>+10</span><strong>—</strong></li>
-                        <li><span>+11</span><strong>—</strong></li>
-                        <li><span>+12</span><strong>—</strong></li>
-                        <li><span>+13</span><strong>—</strong></li>
-                        <li><span>+14</span><strong>—</strong></li>
-                    </ol>
-                    <p class="booking-window__note">Este rango explica la regla del sistema; no representa cupos disponibles.</p>
+                    <p class="booking-window__note">Consulta los horarios disponibles al elegir tu especialidad.</p>
                 </div>
             </aside>
 
@@ -65,14 +49,14 @@
                         <a href="#especialidades">Especialidades</a>
                         <a href="#servicios">Servicios</a>
                         <a href="#contacto">Contacto</a>
-                        <a class="site-nav__action" href="{{ route('login') }}">Portal del paciente</a>
+                        <a class="site-nav__action" href="{{ route('login') }}">Iniciar sesión</a>
                     </nav>
                 </header>
 
                 <section id="inicio" class="portal-hero reveal-group" aria-labelledby="portal-title">
                     <div class="hero-copy reveal">
                         <h1 id="portal-title">Tus citas, en orden</h1>
-                        <p class="hero-copy__lead">Un acceso claro a las especialidades, las reservas y el seguimiento de citas de la clínica.</p>
+                        <p class="hero-copy__lead">Elige tu especialidad, reserva un horario y lleva tu pase QR a la consulta.</p>
                         <div class="hero-actions">
                             <a class="button button--primary" href="{{ route('login') }}" aria-describedby="reservation-status">Reservar cita</a>
                             <a class="text-link" href="#especialidades">Conocer especialidades</a>
@@ -81,14 +65,14 @@
 
                     <div class="hero-system-note reveal">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 9 9 0 0 0-9-9Zm0 5v5l3 2" /></svg>
-                        <p id="reservation-status">La base de datos limita la agenda desde hoy hasta 14 días después. La reserva en recepción está disponible; la reserva web desde el panel del paciente está en desarrollo.</p>
+                        <p id="reservation-status">Puedes reservar desde hoy y hasta 14 días por adelantado, en el portal o en recepción.</p>
                     </div>
                 </section>
 
                 <section id="especialidades" class="portal-section specialties-section reveal-group" aria-labelledby="specialties-title">
                     <div class="section-heading reveal">
                         <h2 id="specialties-title">Especialidades</h2>
-                        <p>El catálogo se muestra únicamente cuando la clínica expone especialidades activas.</p>
+                        <p>Toca una especialidad para conocer la consulta y su duración.</p>
                     </div>
 
                     @if ($specialtiesState === 'ready')
@@ -103,7 +87,7 @@
                                         <span class="specialty-row__toggle" aria-hidden="true">+</span>
                                     </summary>
                                     <div class="specialty-row__content">
-                                        <p>{{ $specialty['description'] ?: 'Descripción no registrada en el backend.' }}</p>
+                                        @if (filled($specialty['description']))<p>{{ $specialty['description'] }}</p>@endif
                                         @if ($specialty['duration'])
                                             <span>Duración referencial: {{ $specialty['duration'] }} min</span>
                                         @endif
@@ -118,7 +102,7 @@
                                 <path d="M5 5h14v14H5z" />
                             </svg>
                             <div>
-                                <h3>{{ $specialtiesState === 'empty' ? 'Catálogo sin resultados' : 'Catálogo aún no conectado' }}</h3>
+                                <h3>{{ $specialtiesState === 'empty' ? 'Catálogo sin resultados' : 'Especialidades no disponibles' }}</h3>
                                 <p>{{ $specialtiesMessage }}</p>
                                 @if ($specialtiesState === 'error')
                                     <a class="text-link" href="{{ route('home') }}#especialidades">Reintentar consulta</a>
@@ -131,37 +115,33 @@
                 <section id="servicios" class="portal-section capability-section reveal-group" aria-labelledby="services-title">
                     <div class="section-heading reveal">
                         <h2 id="services-title">Servicios del portal</h2>
-                        <p>Cada capacidad indica con precisión qué parte existe y cuál está en desarrollo o llegará próximamente.</p>
+                        <p>Desde la reserva hasta tu llegada a la clínica.</p>
                     </div>
 
                     <div class="capability-menu">
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Reservas web</h3>
-                                <p>La base aplica una ventana móvil de hoy a 14 días y evita reservas solapadas. El acceso desde el panel del paciente está en desarrollo.</p>
+                                <p>Elige especialidad, médico y fecha. Confirma uno de los horarios disponibles desde tu cuenta.</p>
                             </div>
-                            <span class="status-label status-label--pending">En desarrollo</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Acreditación con QR</h3>
-                                <p>La base genera un token firmado y valida el check-in en recepción. Disponible para el personal autorizado de Secretaría.</p>
+                                <p>Abre el pase QR de tu cita confirmada y muéstralo en recepción para registrar tu llegada.</p>
                             </div>
-                            <span class="status-label status-label--pending">Disponible</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Recordatorio 24 h antes</h3>
-                                <p>La cola se programa en PostgreSQL; falta el servicio que entregue correo, SMS o WhatsApp. Aún no se envían recordatorios automáticos.</p>
+                                <p>Consulta tus recordatorios en Notificaciones. Para las citas reservadas con suficiente anticipación también se programa un aviso por correo.</p>
                             </div>
-                            <span class="status-label status-label--pending">Próximamente</span>
                         </article>
                         <article class="capability-item reveal">
                             <div>
                                 <h3>Consulta de citas</h3>
-                                <p>La vista de historial existe en la base y su consulta administrativa está disponible en recepción. La consulta desde el panel del paciente está en desarrollo.</p>
+                                <p>En Mis citas puedes ver tus próximas consultas y tu historial, o cambiar y cancelar las reservas que admiten cambios.</p>
                             </div>
-                            <span class="status-label status-label--pending">En desarrollo</span>
                         </article>
                     </div>
                 </section>
@@ -169,7 +149,7 @@
                 <section class="portal-section access-section reveal-group" aria-labelledby="access-title">
                     <div class="section-heading reveal">
                         <h2 id="access-title">Un acceso para cada rol</h2>
-                        <p>Pacientes, médicos, secretaría y administración comparten el ingreso; el sistema conserva la autorización por rol.</p>
+                        <p>Ingresa con tu cuenta para abrir el panel que te corresponde.</p>
                     </div>
 
                     <div class="role-lines" aria-label="Roles disponibles">
@@ -194,7 +174,7 @@
             <div class="portal-cta__scrim" aria-hidden="true"></div>
             <div class="portal-cta__copy reveal">
                 <h2 id="cta-title">Tu próxima cita empieza aquí</h2>
-                <p>Ingresa al portal o crea una cuenta de paciente. La reserva web desde tu panel está en desarrollo; puedes solicitar un turno en recepción.</p>
+                <p>Crea tu cuenta de paciente para elegir un horario y consultar tus citas desde el teléfono.</p>
                 <a class="button button--light" href="{{ route('register') }}">Crear cuenta</a>
             </div>
         </section>
@@ -202,7 +182,7 @@
         <section id="contacto" class="contact-band reveal-group" aria-labelledby="contact-title">
             <div class="contact-band__statement reveal">
                 <h2 id="contact-title">Atención e información</h2>
-                <p>Los datos institucionales se publican desde la configuración del entorno para evitar información no oficial.</p>
+                <p>Consulta los canales de contacto y los horarios de la clínica.</p>
             </div>
 
             <img
@@ -223,12 +203,11 @@
                     <a href="mailto:{{ $clinic['contact']['email'] }}">{{ $clinic['contact']['email'] }}</a>
                 @endif
                 @if (! $clinic['contact']['phone'] && ! $clinic['contact']['email'])
-                    <p class="configuration-note">Teléfono y correo pendientes de configuración.</p>
+                    <p class="configuration-note">Consulta en recepción para obtener ayuda.</p>
                 @endif
                 @if ($clinic['contact']['address'] || $clinic['contact']['city'])
                     <p>{{ collect([$clinic['contact']['address'], $clinic['contact']['city']])->filter()->join(', ') }}</p>
-                @else
-                    <p class="configuration-note">Dirección pendiente de configuración.</p>
+
                 @endif
             </div>
 
@@ -241,7 +220,7 @@
                         @if ($clinic['hours']['sunday'])<div><dt>Domingo</dt><dd>{{ $clinic['hours']['sunday'] }}</dd></div>@endif
                     </dl>
                 @else
-                    <p class="configuration-note">Horarios pendientes de configuración.</p>
+                    <p class="configuration-note">Consulta los horarios en recepción.</p>
                 @endif
             </div>
         </section>

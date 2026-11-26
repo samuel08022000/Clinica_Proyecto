@@ -3,6 +3,7 @@
 namespace Tests\Postgres;
 
 use App\Exceptions\ClinicalOperationException;
+use App\Mail\AppointmentQrMail;
 use App\Models\Usuario;
 use App\Services\Administration\AdministrationService;
 use App\Services\Notifications\AppointmentNotificationService;
@@ -388,6 +389,130 @@ final class AdministrationReceptionMigrationTest extends TestCase
         $worker->process(500);
         $this->assertSame(0, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND estado IN ('Pendiente','EnProceso','Enviada')", [$first['codCit']]));
         $this->assertSame(1, (int) $this->scalar("SELECT intentos FROM notificaciones WHERE cod_cit=? AND canal='Email' AND tipo_alerta='Confirmacion'", [$first['codCit']]));
+    }
+
+    #[Test]
+    public function reminder_uses_both_channels_local_time_and_the_current_verified_pass(): void
+    {
+        Mail::fake();
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $date = $this->owner->query('SELECT fecha_clinica()+8')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $first = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']])['codCit'];
+        $current = $service->request('POST', 'citas/'.$first.'/reprogramar', ['codSlot' => $slots[1]['codSlot'], 'motivo' => 'Cambio de prueba'])['codCit'];
+        $this->assertSame(2, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND estado='Cancelada'", [$first]));
+        $this->assertSame(2, (int) $this->scalar(<<<'SQL'
+            SELECT count(*) FROM notificaciones n JOIN citas c USING(cod_cit)
+            WHERE n.cod_cit=? AND n.tipo_alerta='Recordatorio_24h' AND n.canal IN ('Web','Email')
+              AND n.fecha_programada=(c.fecha+c.hora_inicio) AT TIME ZONE 'America/La_Paz' - interval '24 hours'
+            SQL, [$current]));
+
+        $this->owner->prepare("UPDATE notificaciones SET fecha_programada=now() WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h'")->execute([$current]);
+        $notice = $this->scalar("SELECT cod_not FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND canal='Email'", [$current]);
+        $this->owner->beginTransaction();
+        try {
+            $this->scalar('SELECT cod_not FROM notificaciones WHERE cod_not=? FOR UPDATE', [$notice]);
+            $db = DB::connection('clinical');
+            $db->beginTransaction();
+            try {
+                $db->statement("SET LOCAL statement_timeout='3s'");
+                $claimed = $db->select('SELECT id_notificacion FROM tomar_notificaciones(500)');
+                $this->assertNotContains((int) $notice, array_map('intval', array_column($claimed, 'id_notificacion')));
+            } finally {
+                $db->rollBack();
+            }
+        } finally {
+            $this->owner->rollBack();
+        }
+        $failures = 0;
+        $db->beforeExecuting(function (string $query, array $bindings) use ($notice, &$failures): void {
+            if ($failures === 0 && $query === 'SELECT public.finalizar_notificacion(?,true)'
+                && (int) $bindings[0] === (int) $notice) {
+                $failures++;
+                throw new \RuntimeException('Fallo controlado después de aceptar el recordatorio.');
+            }
+        });
+        $worker = app(AppointmentNotificationService::class);
+        $worker->process(500);
+        $worker->process(500);
+        $this->assertSame(1, $failures);
+        $email = $this->scalar('SELECT u.email FROM usuarios u JOIN pacientes p USING(cod_usu) WHERE p.cod_pac=?', [$patient]);
+        $this->assertCount(1, Mail::sent(AppointmentQrMail::class, fn ($mail) => $mail->passData['tipo'] === 'Recordatorio_24h' && $mail->passData['codCit'] === $current));
+        Mail::assertSent(AppointmentQrMail::class, function (AppointmentQrMail $mail) use ($current, $email, $worker): bool {
+            if ($mail->passData['tipo'] !== 'Recordatorio_24h' || $mail->passData['codCit'] !== $current) {
+                return false;
+            }
+            $this->assertTrue($mail->hasTo($email));
+            $this->assertNotNull($mail->headers()->messageId);
+            $this->assertSame($worker->qrPng($this->scalar('SELECT token_qr FROM citas WHERE cod_cit=?', [$current])), $mail->qrPngBinary);
+
+            return true;
+        });
+        Mail::assertNotSent(AppointmentQrMail::class, fn ($mail) => $mail->passData['tipo'] === 'Recordatorio_24h' && $mail->passData['codCit'] === $first);
+        $this->assertSame(1, (int) $this->scalar('SELECT intentos FROM notificaciones WHERE cod_not=?', [$notice]));
+        $this->assertSame('Enviada', $this->scalar('SELECT estado FROM notificaciones WHERE cod_not=?', [$notice]));
+        $this->login($this->scalar('SELECT cod_usu FROM pacientes WHERE cod_pac=?', [$patient]));
+        $this->get('/paciente/notificaciones')->assertOk()->assertSee("Recordatorio: tiene la cita $current")
+            ->assertDontSee("Recordatorio: tiene la cita $first");
+    }
+
+    #[Test]
+    public function short_notice_and_unverified_email_do_not_send_redundant_or_unverified_reminders(): void
+    {
+        Mail::fake();
+        [$admin, $secretary, $patient, $specialty, $doctor] = $this->operationalFixture();
+        $tomorrow = $this->owner->query('SELECT fecha_clinica()+1')->fetchColumn();
+        $weekday = (int) $this->owner->query('SELECT extract(isodow FROM fecha_clinica()+1)')->fetchColumn();
+        $this->login($admin);
+        app(AdministrationService::class)->request('POST', 'administracion/medicos/'.$doctor['codMed'].'/horarios', [
+            'diaSemana' => $weekday, 'horaInicio' => '00:00', 'horaFin' => '01:00',
+        ]);
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $tomorrow]);
+        $short = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']])['codCit'];
+        $this->assertSame('Web', $this->scalar("SELECT canal FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h'", [$short]));
+        $this->assertSame(0, (int) $this->scalar("SELECT count(*) FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND canal='Email'", [$short]));
+
+        $future = $this->owner->query('SELECT fecha_clinica()+8')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $future]);
+        $booked = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']])['codCit'];
+        $this->owner->prepare('UPDATE pacientes SET email_verificado=false,email_verificado_en=NULL WHERE cod_pac=?')->execute([$patient]);
+        $this->owner->prepare("UPDATE notificaciones SET fecha_programada=now() WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h'")->execute([$booked]);
+        app(AppointmentNotificationService::class)->process(500);
+        Mail::assertNotSent(AppointmentQrMail::class, fn ($mail) => $mail->passData['codCit'] === $booked);
+        $this->assertSame('Cancelada', $this->scalar("SELECT estado FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND canal='Email'", [$booked]));
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$booked]));
+    }
+
+    #[Test]
+    public function reminder_transport_failure_uses_backoff_and_stops_at_the_existing_limit(): void
+    {
+        [, $secretary, $patient, $specialty] = $this->operationalFixture();
+        $this->login($secretary['codUsu']);
+        $service = app(ReceptionService::class);
+        $date = $this->owner->query('SELECT fecha_clinica()+8')->fetchColumn();
+        $slots = $service->request('GET', 'disponibilidad', ['codPac' => $patient, 'codEsp' => $specialty['codEsp'], 'fecha' => $date]);
+        $code = $service->request('POST', 'citas', ['codPac' => $patient, 'codSlot' => $slots[0]['codSlot']])['codCit'];
+        $id = $this->scalar("SELECT cod_not FROM notificaciones WHERE cod_cit=? AND tipo_alerta='Recordatorio_24h' AND canal='Email'", [$code]);
+        $limit = (int) $this->scalar('SELECT max_intentos FROM notificaciones WHERE cod_not=?', [$id]);
+        $due = $this->owner->prepare('UPDATE notificaciones SET fecha_programada=now() WHERE cod_not=?');
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP timed out'));
+        $worker = app(AppointmentNotificationService::class);
+        for ($attempt = 1; $attempt <= $limit; $attempt++) {
+            $due->execute([$id]);
+            $worker->process(500);
+            $this->assertSame($attempt, (int) $this->scalar('SELECT intentos FROM notificaciones WHERE cod_not=?', [$id]));
+            if ($attempt < $limit) {
+                $this->assertTrue($this->scalar("SELECT estado='Pendiente' AND fecha_programada>now() FROM notificaciones WHERE cod_not=?", [$id]));
+            }
+        }
+        $worker->process(500);
+        $this->assertSame($limit, (int) $this->scalar('SELECT intentos FROM notificaciones WHERE cod_not=?', [$id]));
+        $this->assertSame('Fallida', $this->scalar('SELECT estado FROM notificaciones WHERE cod_not=?', [$id]));
+        $this->assertSame('Confirmada', $this->scalar('SELECT estado FROM citas WHERE cod_cit=?', [$code]));
     }
 
     #[Test]

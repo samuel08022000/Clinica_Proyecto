@@ -26,8 +26,8 @@ class PortalFrontendTest extends TestCase
             || str_contains($response->getContent(), 'No fue posible consultar las especialidades. Intenta nuevamente.'),
         );
         $response->assertDontSee('La API pública de especialidades todavía no está conectada al portal.');
-        $response->assertSeeInOrder(['Reservas web', 'En desarrollo', 'Acreditación con QR', 'Disponible', 'Recordatorio 24 h antes', 'Próximamente', 'Consulta de citas', 'En desarrollo']);
-        $response->assertSee('Aún no se envían recordatorios automáticos.');
+        $response->assertSeeInOrder(['Reservas web', 'Acreditación con QR', 'Recordatorio 24 h antes', 'Consulta de citas']);
+        $response->assertDontSee('en desarrollo')->assertSee('se programa un aviso por correo');
         $response->assertDontSee('Medicina General');
         Http::assertNothingSent();
     }
@@ -38,7 +38,7 @@ class PortalFrontendTest extends TestCase
             ->assertOk()
             ->assertSeeInOrder(['id="inicio"', 'id="especialidades"', 'id="servicios"', 'id="contacto"'], false)
             ->assertSee('booking-window__note', false)
-            ->assertSee('no representa cupos disponibles')
+            ->assertSee('Consulta los horarios disponibles')
             ->assertSee('images/clinic/appointment-calendar.png', false)
             ->assertSee('images/clinic/reception.png', false)
             ->assertSee('href="'.route('login').'"', false)

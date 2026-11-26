@@ -76,6 +76,24 @@ class AdministracionColasTest extends TestCase
         }
     }
 
+    public static function utilizationThresholds(): array
+    {
+        return [
+            [69, 'optimo'], [70, 'estable'], [85, 'estable'], [86, 'alerta_congestion'],
+            [99, 'alerta_congestion'], [100, 'saturado'], [125, 'saturado'],
+        ];
+    }
+
+    #[DataProvider('utilizationThresholds')]
+    public function test_utilization_thresholds_apply_without_capping_the_percentage(int $percent, string $state): void
+    {
+        $service = $this->mathService();
+        foreach ([$service->calcularMM1($percent, 100), $service->calcularMMc($percent, 50, 2)] as $metrics) {
+            $this->assertSame($state, $metrics['estado']);
+            $this->assertEqualsWithDelta($percent, $metrics['rho_porcentaje'], 1e-9);
+        }
+    }
+
     public function test_mmc_calculates_exact_erlang_c_metrics_for_known_multi_server_case(): void
     {
         $service = $this->mathService();
@@ -245,18 +263,30 @@ class AdministracionColasTest extends TestCase
                     return [];
                 }
                 if (str_contains($sql, "WHERE c.estado = 'En Espera'")) {
-                    return [
-                        (object) ['cod_esp' => 'ESP000001', 'cod_med' => 'MED000001', 'en_espera' => 3],
+                    $sample = [
+                        'total' => 3, 'en_atencion' => 0, 'validos' => 2, 'dentro' => 1,
+                        'moderada' => 1, 'elevada' => 0, 'promedio' => 12.0, 'maximo' => 20.0,
                     ];
+
+                    return array_map(static fn (array $scope): object => (object) ($scope + $sample), [
+                        ['cod_esp' => null, 'cod_med' => null],
+                        ['cod_esp' => 'ESP000001', 'cod_med' => null],
+                        ['cod_esp' => null, 'cod_med' => 'MED000001'],
+                    ]);
                 }
                 if (str_contains($sql, 'FROM public.citas')) {
-                    return [
-                        // ESP000001: 16 llegadas totales sobre H promedio = 4h => lambda = 4 pac/h, mu = 3 pac/h, c = 2 => Wq = 16 min, W = 36 min.
-                        (object) ['cod_esp' => 'ESP000001', 'cod_med' => 'MED000001', 'fecha' => '2026-11-16', 'llegadas' => 8, 'atendidas' => 8, 'muestra_empirica' => 8, 'suma_w_empirico_min' => 280.0],
-                        (object) ['cod_esp' => 'ESP000001', 'cod_med' => 'MED000002', 'fecha' => '2026-11-16', 'llegadas' => 8, 'atendidas' => 8, 'muestra_empirica' => 8, 'suma_w_empirico_min' => 240.0],
-                        // ESP000002 (MED000003 sin horarios): 20 llegadas en 1 día => respaldo 8h => lambda = 2.5 pac/h, mu = 2.0 pac/h => saturado (c_min = 2).
-                        (object) ['cod_esp' => 'ESP000002', 'cod_med' => 'MED000003', 'fecha' => '2026-11-16', 'llegadas' => 20, 'atendidas' => 18, 'muestra_empirica' => 10, 'suma_w_empirico_min' => 520.0],
+                    $observed = [
+                        'muestra_espera' => 1, 'suma_espera' => 14.0, 'muestra_consulta' => 1, 'suma_consulta' => 25.0,
+                        'suma_programada' => 20.0, 'muestra_total' => 1, 'suma_total' => 39.0,
                     ];
+
+                    return array_map(static fn (array $row): object => (object) ($row + $observed), [
+                        // ESP000001: 16 llegadas totales sobre H promedio = 4h => lambda = 4 pac/h, mu = 3 pac/h, c = 2 => Wq = 16 min, W = 36 min.
+                        ['cod_esp' => 'ESP000001', 'cod_med' => 'MED000001', 'fecha' => '2026-11-16', 'llegadas' => 8, 'atendidas' => 8, 'muestra_empirica' => 8, 'suma_w_empirico_min' => 280.0],
+                        ['cod_esp' => 'ESP000001', 'cod_med' => 'MED000002', 'fecha' => '2026-11-16', 'llegadas' => 8, 'atendidas' => 8, 'muestra_empirica' => 8, 'suma_w_empirico_min' => 240.0],
+                        // ESP000002 (MED000003 sin horarios): 20 llegadas en 1 día => respaldo 8h => lambda = 2.5 pac/h, mu = 2.0 pac/h => saturado (c_min = 2).
+                        ['cod_esp' => 'ESP000002', 'cod_med' => 'MED000003', 'fecha' => '2026-11-16', 'llegadas' => 20, 'atendidas' => 18, 'muestra_empirica' => 10, 'suma_w_empirico_min' => 520.0],
+                    ]);
                 }
 
                 $this->fail('Consulta SQL inesperada: '.$sql);
@@ -286,10 +316,14 @@ class AdministracionColasTest extends TestCase
         ]);
 
         foreach ($executedSql as $sql) {
-            $this->assertMatchesRegularExpression('/^\s*SELECT\b/i', $sql);
+            $this->assertMatchesRegularExpression('/^\s*(SELECT|WITH)\b/i', $sql);
+            $this->assertDoesNotMatchRegularExpression('/\b(INSERT|UPDATE|DELETE)\b/i', $sql);
         }
 
         $this->assertSame(3, $datos['resumen_global']['en_espera_hoy']);
+        $this->assertSame(50.0, $datos['espera_actual']['global']['porcentaje']);
+        $this->assertSame(14.0, $datos['resumen_global']['observado']['espera']);
+        $this->assertSame(3, $datos['evolucion_espera'][0]['sample']);
 
         $medGeneral = collect($datos['por_especialidad'])->firstWhere('cod_esp', 'ESP000001');
         $this->assertSame(2, $medGeneral['servidores']);
@@ -442,7 +476,10 @@ class AdministracionColasTest extends TestCase
         $rolesQuery->shouldReceive('exists')->once()->andReturnTrue();
         $connection->shouldReceive('table')->with('roles')->once()->andReturn($rolesQuery);
         $connection->shouldReceive('scalar')->once()->with('SELECT public.fecha_clinica()::text')->andReturn('2026-11-19');
-        $connection->shouldReceive('select')->andReturn([]);
+        $connection->shouldReceive('select')->andReturnUsing(static fn (string $sql): array => str_contains($sql, 'GROUPING SETS') ? [(object) [
+            'cod_esp' => null, 'cod_med' => null, 'total' => 0, 'en_atencion' => 0, 'validos' => 0,
+            'dentro' => 0, 'moderada' => 0, 'elevada' => 0, 'promedio' => null, 'maximo' => null,
+        ]] : []);
 
         $database = Mockery::mock(DatabaseManager::class);
         $database->shouldReceive('connection')->with('clinical')->andReturn($connection);

@@ -106,6 +106,7 @@ Route::prefix('medico')->name('medico.')
         Route::get('/agenda', [MedicoAgendaController::class, 'index'])->name('agenda.index');
         Route::get('/historial', [MedicoAgendaController::class, 'history'])->name('historial.index');
         Route::get('/citas/{cita}', [MedicoCitaController::class, 'show'])->whereAlphaNumeric('cita')->name('citas.show');
+        Route::post('/citas/{cita}/iniciar', [MedicoCitaController::class, 'start'])->whereAlphaNumeric('cita')->name('citas.iniciar');
         Route::post('/citas/{cita}/atender', [MedicoCitaController::class, 'finish'])->whereAlphaNumeric('cita')->name('citas.atender');
         Route::get('/derivaciones', [MedicoDerivacionController::class, 'index'])->name('derivaciones.index');
         Route::get('/derivaciones/{derivacion}', [MedicoDerivacionController::class, 'show'])->whereAlphaNumeric('derivacion')->name('derivaciones.show');

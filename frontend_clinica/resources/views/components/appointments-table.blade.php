@@ -7,7 +7,7 @@
                 <td class="r-time">{{ substr($appointment['horaInicio'], 0, 5) }}–{{ substr($appointment['horaFin'], 0, 5) }}</td>
                 <td><a href="{{ route('secretaria.pacientes.show', $appointment['codPac']) }}">{{ $appointment['nombrePaciente'] }}</a><small>{{ $appointment['codPac'] }}</small></td>
                 <td>{{ $appointment['nombreMedico'] }}<small>{{ $appointment['nombreEspecialidad'] }}</small></td>
-                <td><x-appointment-status :value="$appointment['estado']" />
+                <td><x-appointment-status :value="\App\Support\AppointmentPresentation::operationalState($appointment)" />
                     @if($history && filled($appointment['motivoCancelacion'] ?? $appointment['motivoInasistencia'] ?? null))<small>{{ $appointment['motivoCancelacion'] ?? $appointment['motivoInasistencia'] }}</small>@endif
                 </td>
                 @unless($overview)<td>{{ $appointment['canalReserva'] }}</td>@endunless

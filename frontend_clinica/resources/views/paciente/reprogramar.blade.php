@@ -10,7 +10,7 @@
 
     <section class="pac-panel" aria-labelledby="paso1">
         <h2 id="paso1">1. Médico y fecha</h2>
-        <form method="GET" action="{{ route('paciente.citas.reprogramar', $cita['codCit']) }}" class="pac-inline-form">
+        <form method="GET" action="{{ route('paciente.citas.reprogramar', $cita['codCit']) }}#paso2" class="pac-inline-form">
             <div class="field">
                 <label for="med">Médico</label>
                 <select id="med" name="codMed">
@@ -45,7 +45,7 @@
                             <div class="pac-slots__grid">
                                 @foreach ($lista as $cupo)
                                     <label class="pac-slot">
-                                        <input type="radio" name="codSlotNuevo" value="{{ $cupo['codSlot'] }}" required>
+                                        <input type="radio" name="codSlotNuevo" value="{{ $cupo['codSlot'] }}" @checked(old('codSlotNuevo') === $cupo['codSlot']) required>
                                         <span>{{ substr($cupo['horaInicio'], 0, 5) }}</span>
                                     </label>
                                 @endforeach
@@ -54,9 +54,9 @@
                     @endforeach
                     <div class="field">
                         <label for="motivo">Motivo de reprogramación</label>
-                        <textarea id="motivo" name="motivo" rows="3" maxlength="2000" required></textarea>
+                        <textarea id="motivo" name="motivo" rows="3" maxlength="2000" required>{{ old('motivo') }}</textarea>
                     </div>
-                    <label><input type="checkbox" name="confirmacion" value="1" required> Confirmo que deseo reprogramar esta cita.</label>
+                    <label class="pac-confirm"><input type="checkbox" name="confirmacion" value="1" required> Confirmo que deseo reprogramar esta cita.</label>
                     <button class="button button--primary" type="submit">Confirmar reprogramación</button>
                 </form>
             @endif

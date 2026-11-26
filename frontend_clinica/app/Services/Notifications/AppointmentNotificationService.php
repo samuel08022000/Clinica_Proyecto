@@ -35,9 +35,11 @@ class AppointmentNotificationService
         $user = $this->roles->require('ROL001');
 
         return array_map(static fn ($row) => (array) $row, $this->db()->select(
-            "SELECT cod_not, cod_cit, tipo_alerta, mensaje, creado_en FROM notificaciones
-             WHERE cod_usu=? AND canal='Web' AND estado<>'Cancelada' AND fecha_programada<=now()
-             ORDER BY creado_en DESC, cod_not DESC LIMIT 50", [$user->cod_usu],
+            "SELECT n.cod_not, n.cod_cit, n.tipo_alerta, n.mensaje, n.creado_en FROM notificaciones n
+             LEFT JOIN citas c ON c.cod_cit=n.cod_cit
+             WHERE n.cod_usu=? AND n.canal='Web' AND n.estado<>'Cancelada' AND n.fecha_programada<=now()
+               AND (n.tipo_alerta<>'Recordatorio_24h' OR (c.estado='Confirmada' AND c.fecha+c.hora_inicio>ahora_clinica()))
+             ORDER BY n.creado_en DESC, n.cod_not DESC LIMIT 50", [$user->cod_usu],
         ));
     }
 
@@ -151,48 +153,101 @@ class AppointmentNotificationService
 
     private function processNotice(object $notice): string
     {
+        $accepted = false;
         try {
-            return $this->deliver($notice);
+            $result = $this->deliver($notice, $accepted);
         } catch (Throwable $error) {
-            $description = strtolower($error->getMessage());
-            $safeError = match (true) {
-                str_contains($description, 'gd extension'), str_contains($description, 'imagecreatetruecolor') => 'QR_RENDERER: No se pudo generar el PNG. Revisa GD y reinicia el proceso PHP.',
-                str_contains($description, 'authenticate'), str_contains($description, '535'), str_contains($description, '534') => 'SMTP_AUTH: El servidor rechazó la autenticación configurada.',
-                str_contains($description, 'connect'), str_contains($description, 'timed out'), str_contains($description, 'getaddrinfo') => 'SMTP_CONNECTION: No se pudo conectar con el transporte de correo.',
-                default => 'Error recuperable de transporte o de generación del pase.',
-            };
-            $this->db()->scalar('SELECT public.finalizar_notificacion(?,false,?)', [
-                $notice->id_notificacion, $safeError,
-            ]);
-            ClinicalLog::event('notification.mail.failed', [
-                'entity_id' => $notice->cita, 'notification_id' => $notice->id_notificacion,
-                'exception_type' => $error::class,
-            ], 'warning');
+            if ($accepted) {
+                // El transporte ya aceptó el correo. Reintentar el registro sin volver a enviarlo.
+                try {
+                    $this->finalizeClaim($notice, true);
+                    $result = 'enviadas';
+                } catch (Throwable $persistenceError) {
+                    ClinicalLog::event('notification.mail.persistence_failed', [
+                        'entity_id' => $notice->cita, 'notification_id' => 'NOT'.$notice->id_notificacion,
+                        'exception_type' => $persistenceError::class,
+                    ], 'warning');
 
-            return 'errores';
+                    return 'errores';
+                }
+            } else {
+                return $this->recordDeliveryFailure($notice, $error);
+            }
         }
+        if ($accepted && ! Mail::isFake()) {
+            ClinicalLog::afterCommit($this->db(), 'notification.mail.transport_accepted', [
+                'entity_id' => $notice->cita, 'notification_id' => 'NOT'.$notice->id_notificacion,
+                'transport' => config('mail.mailers.'.config('mail.default').'.transport'),
+            ]);
+        }
+
+        return $result;
     }
 
-    private function deliver(object $notice): string
+    private function recordDeliveryFailure(object $notice, Throwable $error): string
     {
-        $result = $this->db()->transaction(function (Connection $db) use ($notice): string {
-            $current = $db->selectOne('SELECT estado FROM notificaciones WHERE cod_not=? FOR UPDATE', [$notice->id_notificacion]);
-            if ($current?->estado !== 'EnProceso') {
+        $description = strtolower($error->getMessage());
+        $safeError = match (true) {
+            str_contains($description, 'gd extension'), str_contains($description, 'imagecreatetruecolor') => 'QR_RENDERER: No se pudo generar el PNG. Revisa GD y reinicia el proceso PHP.',
+            str_contains($description, 'authenticate'), str_contains($description, '535'), str_contains($description, '534') => 'SMTP_AUTH: El servidor rechazó la autenticación configurada.',
+            str_contains($description, 'connect'), str_contains($description, 'timed out'), str_contains($description, 'getaddrinfo') => 'SMTP_CONNECTION: No se pudo conectar con el transporte de correo.',
+            default => 'Error recuperable de transporte o de generación del pase.',
+        };
+        $this->finalizeClaim($notice, false, $safeError);
+        ClinicalLog::event('notification.mail.failed', [
+            'entity_id' => $notice->cita, 'notification_id' => 'NOT'.$notice->id_notificacion,
+            'exception_type' => $error::class,
+        ], 'warning');
+
+        return 'errores';
+    }
+
+    private function finalizeClaim(object $notice, bool $success, ?string $error = null): void
+    {
+        $this->db()->transaction(function (Connection $db) use ($notice, $success, $error): void {
+            if ($this->lockClaim($db, $notice) !== null) {
+                $db->scalar('SELECT public.finalizar_notificacion(?,?::boolean,?)', [
+                    $notice->id_notificacion, $success ? 'true' : 'false', $error,
+                ]);
+            }
+        });
+    }
+
+    private function deliver(object $notice, bool &$accepted): string
+    {
+        return $this->db()->transaction(function (Connection $db) use ($notice, &$accepted): string {
+            if ($notice->cita !== null) {
+                $db->scalar('SELECT public.bloquear_cita_para_notificacion(?)', [$notice->cita]);
+            }
+            $current = $this->lockClaim($db, $notice);
+            if ($current === null) {
                 return 'descartadas';
             }
             $pass = $notice->cita ? $db->selectOne(
                 'SELECT c.cod_cit AS "codCit", c.estado, c.token_qr AS "tokenQr", c.fecha,
                     c.hora_inicio AS "horaInicio", c.hora_fin AS "horaFin",
-                    up.nombre_completo AS "nombrePaciente", up.email, p.email_verificado,
+                    up.nombre_completo AS "nombrePaciente", up.cod_usu, up.email, p.email_verificado,
                     um.nombre_completo AS "nombreMedico", e.nombre_especialidad AS "nombreEspecialidad",
-                    (c.fecha+c.hora_fin<=ahora_clinica()) AS vencida
+                    (c.fecha+c.hora_fin<=clock_timestamp() AT TIME ZONE \'America/La_Paz\') AS vencida,
+                    (c.fecha+c.hora_inicio<=clock_timestamp() AT TIME ZONE \'America/La_Paz\') AS horario_iniciado,
+                    (?::timestamptz > ((c.fecha+c.hora_inicio) AT TIME ZONE \'America/La_Paz\') - interval \'24 hours\') AS confirmada_tarde,
+                    (c.hora_inicio_atencion IS NOT NULL) AS atencion_iniciada
                  FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac
                  JOIN usuarios up ON up.cod_usu=p.cod_usu JOIN medicos m ON m.cod_med=c.cod_med
                  JOIN usuarios um ON um.cod_usu=m.cod_usu JOIN especialidades e ON e.cod_esp=c.cod_esp
-                 WHERE c.cod_cit=?', [$notice->cita],
+                 WHERE c.cod_cit=?', [$current->creado_en, $notice->cita],
             ) : null;
-            if (in_array($notice->tipo, ['Confirmacion', 'Recordatorio_24h'], true)
-                && (! $pass || $pass->estado !== 'Confirmada' || $pass->vencida)) {
+            $vigente = match ($notice->tipo) {
+                'Confirmacion' => $pass && $pass->estado === 'Confirmada' && ! $pass->vencida,
+                'Recordatorio_24h' => $pass && $pass->estado === 'Confirmada' && ! $pass->horario_iniciado
+                    && ($notice->canal_salida !== 'Email' || ! $pass->confirmada_tarde),
+                'Cita_En_Espera' => $notice->canal_salida === 'Web'
+                    || ($pass && $pass->estado === 'En Espera' && ! $pass->atencion_iniciada),
+                default => true,
+            };
+            if (! $vigente || ($notice->canal_salida === 'Email'
+                && (! $pass || $pass->cod_usu !== $notice->usuario || ! $pass->email_verificado
+                    || ! filter_var($pass->email, FILTER_VALIDATE_EMAIL) || $pass->email !== $notice->destino))) {
                 $db->update("UPDATE notificaciones SET estado='Cancelada',en_proceso_desde=NULL WHERE cod_not=?", [$notice->id_notificacion]);
 
                 return 'descartadas';
@@ -202,30 +257,30 @@ class AppointmentNotificationService
 
                 return 'enviadas';
             }
-            if ($notice->canal_salida !== 'Email' || ! $pass || ! $pass->email_verificado
-                || ! filter_var($pass->email, FILTER_VALIDATE_EMAIL) || $pass->email !== $notice->destino) {
-                throw new RuntimeException('Destinatario o canal no habilitado.');
+            if ($notice->canal_salida !== 'Email') {
+                throw new RuntimeException('Canal no habilitado.');
             }
             $qr = in_array($notice->tipo, ['Confirmacion', 'Recordatorio_24h'], true)
                 ? $this->qrPng($pass->tokenQr ?? throw new RuntimeException('QR no disponible.')) : '';
             $sent = Mail::to($pass->email)->send(new AppointmentQrMail(
-                (array) $pass + ['mensaje' => $notice->mensaje, 'tipo' => $notice->tipo], $qr,
+                (array) $pass + ['mensaje' => $notice->mensaje, 'tipo' => $notice->tipo], $qr, (int) $notice->id_notificacion,
             ));
-            if ($sent === null) {
+            if ($sent === null && ! (app()->environment('testing') && Mail::isFake())) {
                 throw new RuntimeException('El transporte no aceptó el mensaje.');
             }
+            $accepted = true;
             $db->scalar('SELECT public.finalizar_notificacion(?,true)', [$notice->id_notificacion]);
 
             return 'enviadas';
         });
-        if ($result === 'enviadas' && $notice->canal_salida === 'Email') {
-            ClinicalLog::afterCommit($this->db(), 'notification.mail.transport_accepted', [
-                'entity_id' => $notice->cita, 'notification_id' => $notice->id_notificacion,
-                'transport' => config('mail.mailers.'.config('mail.default').'.transport'),
-            ]);
-        }
+    }
 
-        return $result;
+    private function lockClaim(Connection $db, object $notice): ?object
+    {
+        return $db->selectOne(
+            "SELECT creado_en FROM notificaciones WHERE cod_not=? AND estado='EnProceso' AND intentos=? FOR UPDATE",
+            [$notice->id_notificacion, $notice->numero_intento],
+        );
     }
 
     public function assertMailTransport(): void

@@ -9,7 +9,18 @@
     </section>
 
     @include('paciente._cita', ['cita' => $cita, 'mostrarAcciones' => false])
-    <x-clinical-progress :state="$cita['estado']" />
+    @if (! empty($qrBase64))
+        <section class="pac-panel pac-pass" aria-labelledby="qr-cita-title">
+            <div>
+                <h2 id="qr-cita-title">Pase QR de confirmación</h2>
+                <p>Presenta este código en recepción al llegar a la clínica.</p>
+            </div>
+            <div class="pac-qr-box__frame">
+                <img width="216" height="216" src="data:image/png;base64,{{ $qrBase64 }}" alt="Código QR de cita {{ $cita['codCit'] }}">
+            </div>
+        </section>
+    @endif
+    <x-clinical-progress :state="\App\Support\AppointmentPresentation::operationalState($cita)" />
     @if(isset($cita['correoEstado']))
         <section class="pac-panel"><h2>Correo del pase QR</h2>
             <p>{{ match($cita['correoEstado']) {
@@ -59,27 +70,13 @@
                         @csrf
                         <div class="field">
                             <label for="motivo">Motivo de cancelación</label>
-                            <textarea id="motivo" name="motivo" rows="3" maxlength="2000" required></textarea>
+                            <textarea id="motivo" name="motivo" rows="3" maxlength="2000" required>{{ old('motivo') }}</textarea>
                         </div>
-                        <label><input type="checkbox" name="confirmacion" value="1" required> Confirmo que deseo cancelar esta cita.</label>
+                        <label class="pac-confirm"><input type="checkbox" name="confirmacion" value="1" required> Confirmo que deseo cancelar esta cita.</label>
                         <button class="pac-link-danger" type="submit">Cancelar cita</button>
                     </form>
                 </section>
             @endif
         </div>
-    @endif
-@if (! empty($qrBase64))
-        <section class="pac-panel" aria-labelledby="qr-cita-title">
-            <h2 id="qr-cita-title">Pase QR de confirmación</h2>
-            <div class="pac-qr-box">
-                <div class="pac-qr-box__frame">
-                    <img src="data:image/png;base64,{{ $qrBase64 }}"
-                         alt="Código QR de cita {{ $cita['codCit'] }}">
-                </div>
-                <p class="pac-qr-box__note">
-                    Presenta este código en recepción al llegar a la clínica. Está disponible aunque el envío del correo esté pendiente o haya fallado.
-                </p>
-            </div>
-        </section>
     @endif
 @endsection

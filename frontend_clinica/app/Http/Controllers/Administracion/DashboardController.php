@@ -12,7 +12,9 @@ class DashboardController extends Controller
 {
     public function __invoke(DashboardRequest $request, DashboardService $service): View
     {
-        $filters = $request->validated();
+        $filters = $request->safe()->except(['vista']);
+        $hasFilterErrors = $request->session()->get('errors')?->hasAny(['periodo', 'desde', 'hasta', 'especialidad', 'medico']);
+        $section = $request->validated('vista') ?? ($filters !== [] || $hasFilterErrors ? 'analisis' : 'hoy');
         try {
             $dashboard = $service->snapshot($filters);
         } catch (ClinicalOperationException $exception) {
@@ -22,6 +24,6 @@ class DashboardController extends Controller
             $dashboard = null;
         }
 
-        return view('administracion.dashboard', compact('dashboard', 'filters'));
+        return view('administracion.dashboard', compact('dashboard', 'filters', 'section'));
     }
 }

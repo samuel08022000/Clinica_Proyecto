@@ -205,7 +205,7 @@ class ReceptionService
         return $this->appointment($code);
     }
 
-    private const HISTORY_SQL = 'SELECT h.cod_cit AS "codCit",h.cod_pac AS "codPac",up.nombre_completo AS "nombrePaciente",h.cod_med AS "codMed",h.nombre_medico AS "nombreMedico",h.cod_esp AS "codEsp",h.nombre_especialidad AS "nombreEspecialidad",h.fecha,h.hora_inicio AS "horaInicio",h.hora_fin AS "horaFin",h.estado,h.canal_reserva AS "canalReserva",c.motivo_cancelacion AS "motivoCancelacion",c.cancelado_por_usu AS "canceladoPorUsu",h.cancelado_en AS "canceladoEn",h.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu",h.fecha_atencion AS "fechaAtencion",i.cod_inc AS "codIncInasistencia",i.fecha_registro AS "inasistenciaRegistradaEn",i.registrado_por_usu AS "inasistenciaPorUsu",i.motivo AS "motivoInasistencia" FROM v_historial_citas h JOIN citas c ON c.cod_cit=h.cod_cit JOIN pacientes p ON p.cod_pac=h.cod_pac JOIN usuarios up ON up.cod_usu=p.cod_usu LEFT JOIN incidencias_sanciones i ON i.cod_cit=h.cod_cit AND i.tipo_incidencia=\'INASISTENCIA_NO_SHOW\' AND i.secuencial=(SELECT max(i2.secuencial) FROM incidencias_sanciones i2 WHERE i2.cod_cit=h.cod_cit AND i2.tipo_incidencia=\'INASISTENCIA_NO_SHOW\') WHERE 1=1';
+    private const HISTORY_SQL = 'SELECT h.cod_cit AS "codCit",h.cod_pac AS "codPac",up.nombre_completo AS "nombrePaciente",h.cod_med AS "codMed",h.nombre_medico AS "nombreMedico",h.cod_esp AS "codEsp",h.nombre_especialidad AS "nombreEspecialidad",h.fecha,h.hora_inicio AS "horaInicio",h.hora_fin AS "horaFin",h.estado,h.canal_reserva AS "canalReserva",c.motivo_cancelacion AS "motivoCancelacion",c.cancelado_por_usu AS "canceladoPorUsu",h.cancelado_en AS "canceladoEn",h.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu",h.fecha_atencion AS "fechaAtencion",c.hora_inicio_atencion AS "horaInicioAtencion",i.cod_inc AS "codIncInasistencia",i.fecha_registro AS "inasistenciaRegistradaEn",i.registrado_por_usu AS "inasistenciaPorUsu",i.motivo AS "motivoInasistencia" FROM v_historial_citas h JOIN citas c ON c.cod_cit=h.cod_cit JOIN pacientes p ON p.cod_pac=h.cod_pac JOIN usuarios up ON up.cod_usu=p.cod_usu LEFT JOIN incidencias_sanciones i ON i.cod_cit=h.cod_cit AND i.tipo_incidencia=\'INASISTENCIA_NO_SHOW\' AND i.secuencial=(SELECT max(i2.secuencial) FROM incidencias_sanciones i2 WHERE i2.cod_cit=h.cod_cit AND i2.tipo_incidencia=\'INASISTENCIA_NO_SHOW\') WHERE 1=1';
 
     private function appointments(array $filters, bool $history): array
     {
@@ -213,11 +213,20 @@ class ReceptionService
         $size = (int) ($filters['size'] ?? 20);
         $sql = self::HISTORY_SQL;
         $bindings = [];
-        foreach (['codPac' => 'h.cod_pac', 'codMed' => 'h.cod_med', 'estado' => 'h.estado'] as $key => $column) {
+        foreach (['codPac' => 'h.cod_pac', 'codMed' => 'h.cod_med'] as $key => $column) {
             if (filled($filters[$key] ?? null)) {
                 $sql .= " AND $column=?";
                 $bindings[] = $filters[$key];
             }
+        }
+        if (filled($filters['estado'] ?? null)) {
+            $state = $filters['estado'];
+            $sql .= match ($state) {
+                'En Espera' => ' AND h.estado=? AND c.hora_inicio_atencion IS NULL',
+                'En Atención' => ' AND h.estado=? AND c.hora_inicio_atencion IS NOT NULL',
+                default => ' AND h.estado=?',
+            };
+            $bindings[] = $state === 'En Atención' ? 'En Espera' : $state;
         }
         if (filled($filters['fecha'] ?? null)) {
             $sql .= ' AND h.fecha=?';
@@ -242,14 +251,14 @@ class ReceptionService
 
     private function appointment(string $code): array
     {
-        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",c.cod_slot AS "codSlot",c.cod_pac AS "codPac",up.nombre_completo AS "nombrePaciente",c.cod_med AS "codMed",um.nombre_completo AS "nombreMedico",c.cod_esp AS "codEsp",e.nombre_especialidad AS "nombreEspecialidad",c.fecha,c.hora_inicio AS "horaInicio",c.hora_fin AS "horaFin",c.estado,c.canal_reserva AS "canalReserva",c.cod_sec AS "codSec",(c.token_qr IS NOT NULL) AS "qrDisponible" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios up ON up.cod_usu=p.cod_usu JOIN medicos m ON m.cod_med=c.cod_med JOIN usuarios um ON um.cod_usu=m.cod_usu JOIN especialidades e ON e.cod_esp=c.cod_esp WHERE c.cod_cit=?', [$code]);
+        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",c.cod_slot AS "codSlot",c.cod_pac AS "codPac",up.nombre_completo AS "nombrePaciente",c.cod_med AS "codMed",um.nombre_completo AS "nombreMedico",c.cod_esp AS "codEsp",e.nombre_especialidad AS "nombreEspecialidad",c.fecha,c.hora_inicio AS "horaInicio",c.hora_fin AS "horaFin",c.estado,c.canal_reserva AS "canalReserva",c.cod_sec AS "codSec",c.hora_inicio_atencion AS "horaInicioAtencion",(c.token_qr IS NOT NULL) AS "qrDisponible" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios up ON up.cod_usu=p.cod_usu JOIN medicos m ON m.cod_med=c.cod_med JOIN usuarios um ON um.cod_usu=m.cod_usu JOIN especialidades e ON e.cod_esp=c.cod_esp WHERE c.cod_cit=?', [$code]);
 
         return $row ? (array) $row : self::missing('La cita solicitada no existe.');
     }
 
     private function attendance(string $code): array
     {
-        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",c.cod_pac AS "codPac",u.nombre_completo AS "nombrePaciente",c.fecha,c.estado,c.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu WHERE c.cod_cit=?', [$code]);
+        $row = $this->db()->selectOne('SELECT c.cod_cit AS "codCit",c.cod_pac AS "codPac",u.nombre_completo AS "nombrePaciente",c.fecha,c.estado,c.hora_inicio_atencion AS "horaInicioAtencion",c.hora_llegada_checkin AS "horaLlegadaCheckin",c.checkin_por_usu AS "checkinPorUsu" FROM citas c JOIN pacientes p ON p.cod_pac=c.cod_pac JOIN usuarios u ON u.cod_usu=p.cod_usu WHERE c.cod_cit=?', [$code]);
         if (! $row) {
             self::missing('La cita solicitada no existe.');
         }
@@ -299,7 +308,7 @@ class ReceptionService
             throw new ClinicalOperationException(400, 'El QR es inválido o fue reemplazado. Presenta el pase vigente.', 'QR_INVALIDO');
         }
         if ($row->estado === 'En Espera') {
-            throw new ClinicalOperationException(409, 'La llegada de este paciente ya está registrada. Su cita está En Espera.', 'CHECKIN_DUPLICADO');
+            throw new ClinicalOperationException(409, 'La llegada de este paciente ya está registrada.', 'CHECKIN_DUPLICADO');
         }
         if ($row->estado !== 'Confirmada') {
             throw new ClinicalOperationException(409, 'Esta cita está '.$row->estado.' y no admite registro de llegada.', 'ESTADO_INCOMPATIBLE');

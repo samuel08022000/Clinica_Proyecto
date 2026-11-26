@@ -336,7 +336,7 @@ final class ClinicalLoggingTest extends TestCase
         $this->mailTransport(true);
         $result = app(AppointmentNotificationService::class)->process(1);
         $this->assertSame(1, $result['errores']);
-        $this->assertSame(0, $this->db->commits);
+        $this->assertSame(1, $this->db->commits); // La transacción del envío se revierte y el reintento se registra aparte.
         $this->assertSame(['notification.mail.failed'], array_column($this->logger->records, 'event'));
         $this->assertSame('warning', $this->logger->records[0]['level']);
         $this->assertPrivateValuesAbsent();

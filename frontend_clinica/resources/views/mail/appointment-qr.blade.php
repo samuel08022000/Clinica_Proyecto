@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmación de cita | {{ config('clinic.identity.name', config('app.name')) }}</title>
+    <title>{{ $noticeTitle }} | {{ config('clinic.identity.name', config('app.name')) }}</title>
 </head>
 <body style="margin: 0; padding: 32px 16px; background-color: #f1f6f7; color: #0b233f; font-family: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif; line-height: 1.5;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 580px; margin: 0 auto;">
@@ -20,7 +20,7 @@
         <tr>
             <td style="background-color: #ffffff; border: 1px solid #dce5e8; border-radius: 8px; padding: 32px;">
                 <span style="display: inline-block; padding: 4px 12px; border-radius: 999px; background-color: #e4f3ed; color: #176c55; font-size: 13px; font-weight: 600; margin-bottom: 16px;">
-                    {{ $passData['tipo'] ?? 'Cita confirmada' }}
+                    {{ $noticeTitle }}
                 </span>
 
                 <h1 style="margin: 0 0 12px; font-size: 24px; font-weight: 600; color: #0b233f; line-height: 1.2;">
@@ -76,7 +76,7 @@
                     </tr>
                     <tr>
                         <td style="padding: 10px 0; border-bottom: 1px solid #dce5e8; color: #526574;">Horario</td>
-                        <td style="padding: 10px 0; border-bottom: 1px solid #dce5e8; color: #0b233f; font-weight: 600;">{{ substr($passData['horaInicio'], 0, 5) }}</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #dce5e8; color: #0b233f; font-weight: 600;">{{ substr($passData['horaInicio'], 0, 5) }}@if(isset($passData['horaFin']))–{{ substr($passData['horaFin'], 0, 5) }}@endif (Bolivia)</td>
                     </tr>
                 </table>
 

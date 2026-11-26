@@ -28,9 +28,6 @@
                     @elseif ($tab === 'pasadas') Todavía no tienes citas pasadas.
                     @else No tienes citas canceladas. @endif
                 </p>
-                @if ($tab === 'proximas')
-                    <a class="button button--primary" href="{{ route('paciente.citas.nueva') }}">Agendar una cita</a>
-                @endif
             </div>
         @endforelse
     </section>
